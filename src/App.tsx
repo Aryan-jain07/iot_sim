@@ -219,7 +219,7 @@ export default function App() {
   // Optimized state
   const [optNodes, setOptNodes] = useState<IoTNode[]>([]);
   const [optRunning, setOptRunning] = useState(false);
-  const [optCurrentSlot, setOptCurrentSlot] = useState(0);
+  const [_optCurrentSlot, setOptCurrentSlot] = useState(0);
   const [optMaxSlot, setOptMaxSlot] = useState(0);
   const [optPackets, setOptPackets] = useState(0);
   const optSlotRef = useRef(0); // tracks current slot without stale closure
@@ -333,7 +333,7 @@ export default function App() {
   const packetAdvantage = chaosPackets > 0
     ? Math.round(((optPackets - chaosPackets) / chaosPackets) * 100) : 0;
 
-  const bothRunning = chaosRunning && optRunning;
+  const _bothRunning = chaosRunning && optRunning;
   const eitherRunning = chaosRunning || optRunning;
 
   return (
