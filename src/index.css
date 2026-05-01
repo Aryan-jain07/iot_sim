@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+body {
+  background-color: #f8fafc;
+  /* A soft slate background for the dashboard */
+}
