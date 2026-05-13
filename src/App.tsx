@@ -34,7 +34,7 @@ function ChaosPanel({
   const textSize = Math.max(9, nodeRadius * 0.75);
 
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-orange-500">⚡ Chaos Mode</h2>
@@ -52,8 +52,8 @@ function ChaosPanel({
         }
       </div>
 
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 flex-grow relative`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-full absolute inset-0">
+      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
+        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
           {/* Draw Edges first so they are underneath nodes */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
@@ -144,7 +144,7 @@ function OptimizedPanel({
   const slotIndicatorColors = ['fill-cyan-400','fill-purple-500','fill-pink-500','fill-blue-500','fill-orange-500','fill-teal-400'];
 
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-cyan-400">🎯 Graph Coloring</h2>
@@ -162,8 +162,8 @@ function OptimizedPanel({
         }
       </div>
 
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 flex-grow relative`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-full absolute inset-0">
+      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
+        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
