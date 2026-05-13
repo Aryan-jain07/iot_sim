@@ -20,7 +20,7 @@ const getTheme = (isDark: boolean) => ({
 // ─── Chaos Simulation Panel ──────────────────────────────────────────────────
 function ChaosPanel({
   nodes, adjList, isRunning, collisions, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark, nodeRadius
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; collisions: number; packets: number; batteryPercent: number;
@@ -28,12 +28,13 @@ function ChaosPanel({
   canEdit: boolean; selectedNode: string | null; 
   onNodeRightClick: (id: string) => void;
   onNodeLeftClick: (id: string) => void;
-  isDark: boolean;
+  isDark: boolean; nodeRadius: number;
 }) {
   const theme = getTheme(isDark);
+  const textSize = Math.max(9, nodeRadius * 0.75);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 h-full">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-orange-500">⚡ Chaos Mode</h2>
@@ -51,15 +52,16 @@ function ChaosPanel({
         }
       </div>
 
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto">
+      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 flex-grow relative`}>
+        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-full absolute inset-0">
+          {/* Draw Edges first so they are underneath nodes */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
               if (neighbor && node.id < neighbor.id) {
                 return <line key={`${node.id}-${neighborId}`}
                   x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="2" strokeDasharray="4 4" className="transition-colors duration-500" />;
+                  stroke={theme.edgeLine} strokeWidth="1.5" strokeDasharray="4 4" className="transition-colors duration-500 opacity-60" />;
               }
               return null;
             })
@@ -68,7 +70,6 @@ function ChaosPanel({
             const pct = node.battery / MAX_BATTERY;
             const isSelected = selectedNode === node.id;
             
-            // Core Theme Colors
             let nodeColor = isDark ? 'fill-slate-600' : 'fill-slate-300';
             if (node.state === 'COLLISION') nodeColor = 'fill-red-500';
             if (node.state === 'TRANSMIT') nodeColor = 'fill-yellow-400';
@@ -76,30 +77,29 @@ function ChaosPanel({
             return (
               <g key={node.id} 
                  onClick={() => onNodeLeftClick(node.id)}
-                 onContextMenu={(e) => {
-                   e.preventDefault(); 
-                   if (canEdit) onNodeRightClick(node.id);
-                 }}
+                 onContextMenu={(e) => { e.preventDefault(); if (canEdit) onNodeRightClick(node.id); }}
                  className="cursor-pointer">
                 
                 {isRunning && node.state === 'TRANSMIT' &&
-                  <circle cx={node.x} cy={node.y} r="22" className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
+                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
                 {isRunning && node.state === 'COLLISION' &&
-                  <circle cx={node.x} cy={node.y} r="22" className="fill-red-500/40 animate-ping opacity-75 pointer-events-none" />}
+                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-red-500/40 animate-ping opacity-75 pointer-events-none" />}
 
-                <circle cx={node.x} cy={node.y} r="11"
+                <circle cx={node.x} cy={node.y} r={nodeRadius}
                   className={`transition-all duration-200 ${nodeColor}
-                    ${isSelected ? 'stroke-cyan-400 stroke-[4px]' : isDark ? 'stroke-[#151B2E] stroke-2' : 'stroke-white stroke-2'}
+                    ${isSelected ? 'stroke-cyan-400 stroke-[3px]' : isDark ? 'stroke-[#0B1020] stroke-[2px]' : 'stroke-white stroke-[2px]'}
                     ${canEdit && !isSelected ? 'hover:stroke-cyan-400 hover:stroke-[3px]' : ''}`} />
                 
-                <text x={node.x} y={node.y - 16} fontSize="9" textAnchor="middle" className={`${isDark ? 'fill-slate-400' : 'fill-slate-500'} font-semibold pointer-events-none`}>
+                <text x={node.x} y={node.y - nodeRadius - (textSize/2)} fontSize={textSize} textAnchor="middle" 
+                  className={`${isDark ? 'fill-slate-300' : 'fill-slate-600'} font-bold pointer-events-none drop-shadow-md`}>
                   {node.id.replace('Node_', '')}
                 </text>
                 
-                <rect x={node.x - 11} y={node.y + 14} width="22" height="3" className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="1.5" />
-                <rect x={node.x - 11} y={node.y + 14} width={22 * Math.max(0, pct)} height="3"
+                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={nodeRadius * 2} height="4" 
+                  className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="2" />
+                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={(nodeRadius * 2) * Math.max(0, pct)} height="4"
                   className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none`}
-                  rx="1.5" style={{ transition: 'width 0.3s ease' }} />
+                  rx="2" style={{ transition: 'width 0.3s ease' }} />
               </g>
             );
           })}
@@ -129,7 +129,7 @@ function ChaosPanel({
 // ─── Optimized Simulation Panel ───────────────────────────────────────────────
 function OptimizedPanel({
   nodes, adjList, isRunning, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark, nodeRadius
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; packets: number; batteryPercent: number;
@@ -137,13 +137,14 @@ function OptimizedPanel({
   canEdit: boolean; selectedNode: string | null; 
   onNodeRightClick: (id: string) => void;
   onNodeLeftClick: (id: string) => void;
-  isDark: boolean;
+  isDark: boolean; nodeRadius: number;
 }) {
   const theme = getTheme(isDark);
+  const textSize = Math.max(9, nodeRadius * 0.75);
   const slotIndicatorColors = ['fill-cyan-400','fill-purple-500','fill-pink-500','fill-blue-500','fill-orange-500','fill-teal-400'];
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 h-full">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-cyan-400">🎯 Graph Coloring</h2>
@@ -161,15 +162,15 @@ function OptimizedPanel({
         }
       </div>
 
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto">
+      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 flex-grow relative`}>
+        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-full absolute inset-0">
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
               if (neighbor && node.id < neighbor.id) {
                 return <line key={`${node.id}-${neighborId}`}
                   x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="2" strokeDasharray="4 4" className="transition-colors duration-500" />;
+                  stroke={theme.edgeLine} strokeWidth="1.5" strokeDasharray="4 4" className="transition-colors duration-500 opacity-60" />;
               }
               return null;
             })
@@ -177,43 +178,42 @@ function OptimizedPanel({
           {nodes.map(node => {
             const pct = node.battery / MAX_BATTERY;
             const isSelected = selectedNode === node.id;
-            
-            // Core Theme Colors: Green -> Optimized, Yellow -> Transmit
             const isAssigned = node.color >= 0;
+            
             let nodeColor = isDark ? 'fill-slate-600' : 'fill-slate-300';
-            if (isAssigned) nodeColor = 'fill-emerald-500'; // Green -> Optimized
-            if (node.state === 'TRANSMIT') nodeColor = 'fill-yellow-400'; // Yellow -> Active
+            if (isAssigned) nodeColor = 'fill-emerald-500'; 
+            if (node.state === 'TRANSMIT') nodeColor = 'fill-yellow-400'; 
 
             const assignedIndicator = isAssigned ? slotIndicatorColors[node.color % slotIndicatorColors.length] : 'fill-transparent';
+            const dotSize = Math.max(3, nodeRadius * 0.3);
             
             return (
               <g key={node.id}
                  onClick={() => onNodeLeftClick(node.id)}
-                 onContextMenu={(e) => {
-                   e.preventDefault(); 
-                   if (canEdit) onNodeRightClick(node.id);
-                 }}
+                 onContextMenu={(e) => { e.preventDefault(); if (canEdit) onNodeRightClick(node.id); }}
                  className="cursor-pointer">
                 {isRunning && node.state === 'TRANSMIT' &&
-                  <circle cx={node.x} cy={node.y} r="22" className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
+                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
 
-                <circle cx={node.x} cy={node.y} r="11"
+                <circle cx={node.x} cy={node.y} r={nodeRadius}
                   className={`transition-all duration-200 ${nodeColor}
-                    ${isSelected ? 'stroke-cyan-400 stroke-[4px]' : isDark ? 'stroke-[#151B2E] stroke-2' : 'stroke-white stroke-2'}
+                    ${isSelected ? 'stroke-cyan-400 stroke-[3px]' : isDark ? 'stroke-[#0B1020] stroke-[2px]' : 'stroke-white stroke-[2px]'}
                     ${canEdit && !isSelected ? 'hover:stroke-cyan-400 hover:stroke-[3px]' : ''}`} />
                 
-                {/* Tiny dot to show WHICH time slot they belong to */}
                 {isAssigned &&
-                  <circle cx={node.x + 8} cy={node.y - 8} r="3.5" className={`${assignedIndicator} pointer-events-none stroke-[#151B2E] stroke-[1.5px]`} />}
+                  <circle cx={node.x + (nodeRadius * 0.7)} cy={node.y - (nodeRadius * 0.7)} r={dotSize} 
+                    className={`${assignedIndicator} pointer-events-none stroke-[#0B1020] stroke-[1.5px]`} />}
                 
-                <text x={node.x} y={node.y - 16} fontSize="9" textAnchor="middle" className={`${isDark ? 'fill-slate-400' : 'fill-slate-500'} font-semibold pointer-events-none`}>
+                <text x={node.x} y={node.y - nodeRadius - (textSize/2)} fontSize={textSize} textAnchor="middle" 
+                  className={`${isDark ? 'fill-slate-300' : 'fill-slate-600'} font-bold pointer-events-none drop-shadow-md`}>
                   {node.id.replace('Node_', '')}
                 </text>
                 
-                <rect x={node.x - 11} y={node.y + 14} width="22" height="3" className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="1.5" />
-                <rect x={node.x - 11} y={node.y + 14} width={22 * Math.max(0, pct)} height="3"
+                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={nodeRadius * 2} height="4" 
+                  className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="2" />
+                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={(nodeRadius * 2) * Math.max(0, pct)} height="4"
                   className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none`}
-                  rx="1.5" style={{ transition: 'width 0.3s ease' }} />
+                  rx="2" style={{ transition: 'width 0.3s ease' }} />
               </g>
             );
           })}
@@ -267,6 +267,10 @@ export default function App() {
 
   const eitherRunning = chaosRunning || optRunning;
   const canEdit = editMode && !eitherRunning;
+
+  // Dynamic sizing based on how many nodes exist on the canvas
+  const calculateRadius = (count: number) => Math.max(6, Math.min(22, 28 - (count * 0.4)));
+  const nodeRadius = calculateRadius(optNodes.length > 0 ? optNodes.length : nodeCount);
 
   // ── Network Generation ────────────────────────────────────────────────────
   const handleGenerate = () => {
@@ -395,7 +399,7 @@ export default function App() {
             tickSuccesses++;
             return { ...node, state: 'TRANSMIT' as const, battery: Math.max(0, node.battery - 150) };
           }
-          return { ...node, state: 'SLEEP' as const, battery: Math.max(0, node.battery - 5) };
+          return { ...node, state: 'IDLE' as const, battery: Math.max(0, node.battery - 50) };
         });
 
         setChaosCollisions(p => p + Math.floor(tickCollisions / 2));
@@ -432,7 +436,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [optRunning, optMaxSlot]);
 
-  // ── Derived stats ─────────────────────────────────────────────────────────
   const chaosBattery = chaosNodes.length > 0 ? (chaosNodes.reduce((s, n) => s + n.battery, 0) / chaosNodes.length / MAX_BATTERY) * 100 : 0;
   const optBattery = optNodes.length > 0 ? (optNodes.reduce((s, n) => s + n.battery, 0) / optNodes.length / MAX_BATTERY) * 100 : 0;
   const collisionRate = (chaosPackets + chaosCollisions) > 0 ? Math.round((chaosCollisions / (chaosPackets + chaosCollisions)) * 100) : 0;
@@ -514,90 +517,124 @@ export default function App() {
         {canEdit && (
           <div className={`text-sm px-4 py-2 rounded-lg animate-pulse border
             ${isDark ? 'bg-purple-900/20 text-purple-300 border-purple-500/30' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
-            <strong>Edit Mode:</strong> <b>Right-click</b> nodes to connect them. <b>Left-click</b> a node to view its details or delete it.
+            <strong>Edit Mode:</strong> <b>Right-click</b> nodes to connect them. <b>Left-click</b> a node to inspect or delete it.
           </div>
         )}
       </div>
 
-      {/* Node Inspector Panel */}
+      {/* Side-by-Side Node Inspector Panel */}
       {inspectedNodeId && (
-        <div className={`w-full max-w-5xl p-5 rounded-2xl shadow-xl border mb-6 flex flex-wrap items-center justify-between animate-fade-in relative transition-colors duration-500
-          ${isDark ? 'bg-[#1e293b] border-purple-500/30 shadow-[0_4px_30px_rgba(168,85,247,0.1)]' : 'bg-white border-indigo-200'}`}>
-          <button onClick={() => setInspectedNodeId(null)} className={`absolute top-3 right-5 font-bold text-xl transition hover:scale-110 ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`}>
-            ✕
-          </button>
-
+        <div className={`w-full max-w-7xl p-5 rounded-2xl shadow-2xl border mb-6 flex flex-col gap-4 animate-fade-in relative transition-colors duration-500
+          ${isDark ? 'bg-[#1e293b] border-purple-500/30 shadow-[0_4px_40px_rgba(168,85,247,0.15)]' : 'bg-white border-indigo-200 shadow-indigo-100/50'}`}>
+          
           {(() => {
-            const node = optNodes.find(n => n.id === inspectedNodeId);
-            if (!node) return null;
-            const neighbors = adjList.get(node.id) || [];
+            const optNode = optNodes.find(n => n.id === inspectedNodeId);
+            const chaosNode = chaosNodes.find(n => n.id === inspectedNodeId);
+            if (!optNode || !chaosNode) return null;
+            const neighbors = adjList.get(optNode.id) || [];
             
             return (
-              <div className="flex w-full items-center justify-between">
-                <div className="flex items-center gap-6">
-                  {/* Avatar */}
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-inner
-                    ${node.color === 0 ? 'bg-cyan-500' : node.color === 1 ? 'bg-purple-500' : node.color === 2 ? 'bg-pink-500' : node.color === 3 ? 'bg-blue-500' : node.color === 4 ? 'bg-orange-500' : 'bg-slate-500'}`}>
-                    {node.id.replace('Node_', '')}
+              <>
+                <div className="flex justify-between items-center border-b pb-3 border-slate-700/30">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-inner
+                      ${optNode.color === 0 ? 'bg-cyan-500' : optNode.color === 1 ? 'bg-purple-500' : optNode.color === 2 ? 'bg-pink-500' : optNode.color === 3 ? 'bg-blue-500' : optNode.color === 4 ? 'bg-orange-500' : 'bg-slate-500'}`}>
+                      {optNode.id.replace('Node_', '')}
+                    </div>
+                    <div>
+                      <h3 className={`font-bold text-lg ${isDark ? 'text-white' : 'text-slate-800'}`}>Node Analysis</h3>
+                      <p className={`text-xs uppercase font-bold tracking-widest ${theme.textMuted}`}>Live Head-to-Head Data</p>
+                    </div>
                   </div>
-                  
-                  <div className="flex flex-col gap-4">
-                    <div className="flex gap-8">
-                      <div className="flex flex-col">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Assigned Slot</span>
-                        <span className={`font-mono font-bold text-lg ${isDark ? 'text-white' : 'text-slate-700'}`}>
-                          {node.color >= 0 ? `Slot ${node.color}` : 'Unassigned'}
+                  <div className="flex gap-4 items-center">
+                    {canEdit && (
+                      <button onClick={() => handleDeleteNode(optNode.id)} 
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition shadow-sm flex items-center gap-1.5
+                          ${isDark ? 'bg-red-900/20 text-red-400 border-red-900/50 hover:bg-red-900/40' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}>
+                        <span className="text-sm">🗑️</span> Destroy Node
+                      </button>
+                    )}
+                    <button onClick={() => setInspectedNodeId(null)} className={`font-bold text-2xl transition hover:scale-110 ${isDark ? 'text-slate-500 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  {/* Chaos Side */}
+                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#0B1020]/50 border-orange-900/30' : 'bg-orange-50/50 border-orange-100'}`}>
+                    <h4 className="text-orange-500 font-bold mb-3 flex items-center gap-2"><span className="text-lg">⚡</span> Chaos Network</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Current State</span>
+                        <span className={`font-mono font-bold text-lg ${chaosNode.state === 'COLLISION' ? 'text-red-500' : chaosNode.state === 'TRANSMIT' ? 'text-yellow-400' : theme.text}`}>
+                          {chaosNode.state}
                         </span>
                       </div>
-                      <div className="flex flex-col min-w-[120px]">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Battery Status</span>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-slate-700'}`}>{Math.round((node.battery / MAX_BATTERY) * 100)}%</span>
-                          <div className={`w-16 rounded-full h-2.5 ${isDark ? 'bg-[#0B1020]' : 'bg-slate-200'}`}>
-                            <div className="bg-green-500 h-2.5 rounded-full" style={{ width: `${(node.battery / MAX_BATTERY) * 100}%` }}></div>
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Battery Remaining</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-mono font-bold ${theme.text}`}>{Math.round((chaosNode.battery / MAX_BATTERY) * 100)}%</span>
+                          <div className={`w-full max-w-[80px] rounded-full h-2 ${isDark ? 'bg-[#151B2E]' : 'bg-slate-200'}`}>
+                            <div className={`${(chaosNode.battery / MAX_BATTERY) > 0.4 ? 'bg-green-500' : (chaosNode.battery / MAX_BATTERY) > 0.15 ? 'bg-yellow-500' : 'bg-red-500'} h-2 rounded-full transition-all`} style={{ width: `${(chaosNode.battery / MAX_BATTERY) * 100}%` }}></div>
                           </div>
                         </div>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Interactive Neighbor Chips */}
-                    <div className="flex flex-col">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Interfering Neighbors</span>
-                      <div className="flex flex-wrap gap-2">
-                        {neighbors.length === 0 ? (
-                          <span className="text-sm font-bold text-slate-500 italic">No interference detected</span>
-                        ) : (
-                          neighbors.map(nId => (
-                            <div key={nId} className={`flex items-center pl-2 pr-1 py-1 rounded text-xs font-bold border
-                              ${isDark ? 'bg-orange-900/20 text-orange-400 border-orange-900/50' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
-                              Node {nId.replace('Node_', '')}
-                              {canEdit && (
-                                <button 
-                                  onClick={() => handleRemoveEdge(node.id, nId)} 
-                                  className={`ml-1 rounded-full w-5 h-5 flex items-center justify-center transition
-                                    ${isDark ? 'text-orange-500 hover:bg-orange-500/20 hover:text-red-400' : 'text-orange-400 hover:text-red-500 hover:bg-orange-100'}`}
-                                >✕</button>
-                              )}
-                            </div>
-                          ))
-                        )}
+                  {/* Optimized Side */}
+                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#0B1020]/50 border-cyan-900/30' : 'bg-blue-50/50 border-blue-100'}`}>
+                    <h4 className="text-cyan-400 font-bold mb-3 flex items-center gap-2"><span className="text-lg">🎯</span> Optimized Network</h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Time Slot</span>
+                        <span className={`font-mono font-bold text-lg ${theme.text}`}>
+                          {optNode.color >= 0 ? `Slot ${optNode.color}` : 'None'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Current State</span>
+                        <span className={`font-mono font-bold text-lg ${optNode.state === 'TRANSMIT' ? 'text-yellow-400' : theme.text}`}>
+                          {optNode.state}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Battery Remaining</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-mono font-bold ${theme.text}`}>{Math.round((optNode.battery / MAX_BATTERY) * 100)}%</span>
+                          <div className={`w-full max-w-[80px] rounded-full h-2 ${isDark ? 'bg-[#151B2E]' : 'bg-slate-200'}`}>
+                            <div className={`${(optNode.battery / MAX_BATTERY) > 0.4 ? 'bg-green-500' : (optNode.battery / MAX_BATTERY) > 0.15 ? 'bg-yellow-500' : 'bg-red-500'} h-2 rounded-full transition-all`} style={{ width: `${(optNode.battery / MAX_BATTERY) * 100}%` }}></div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {canEdit && (
-                  <div className={`flex flex-col justify-center ml-4 border-l pl-6 h-full ${isDark ? 'border-[#334155]' : 'border-slate-100'}`}>
-                    <button 
-                      onClick={() => handleDeleteNode(node.id)} 
-                      className={`px-4 py-2 rounded-lg text-sm font-bold border transition shadow-sm flex items-center gap-2
-                        ${isDark ? 'bg-red-900/20 text-red-400 border-red-900/50 hover:bg-red-900/40 hover:text-red-300' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 hover:text-red-700'}`}
-                    >
-                      <span className="text-lg">🗑️</span> Delete Node
-                    </button>
+                {/* Common Data - Interference Edges */}
+                <div className="pt-2">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block mb-2 ${theme.textMuted}`}>Manage Interferences ({neighbors.length})</span>
+                  <div className="flex flex-wrap gap-2">
+                    {neighbors.length === 0 ? (
+                      <span className="text-sm font-bold text-slate-500 italic">No interference detected</span>
+                    ) : (
+                      neighbors.map(nId => (
+                        <div key={nId} className={`flex items-center pl-3 pr-1 py-1.5 rounded-md text-xs font-bold border shadow-sm
+                          ${isDark ? 'bg-orange-900/20 text-orange-400 border-orange-900/50' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
+                          Node {nId.replace('Node_', '')}
+                          {canEdit && (
+                            <button onClick={() => handleRemoveEdge(optNode.id, nId)} 
+                              className={`ml-2 rounded w-6 h-6 flex items-center justify-center transition font-bold
+                                ${isDark ? 'bg-orange-900/40 text-orange-500 hover:bg-red-500/20 hover:text-red-400' : 'bg-orange-100 text-orange-500 hover:text-red-600 hover:bg-red-100'}`}
+                            >✕</button>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              </>
             );
           })()}
         </div>
@@ -605,18 +642,18 @@ export default function App() {
 
       {/* Two simulation panels */}
       <div className="w-full max-w-7xl grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500`}>
+        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500 flex flex-col`}>
           <ChaosPanel
             nodes={chaosNodes} adjList={adjList} isRunning={chaosRunning} collisions={chaosCollisions} packets={chaosPackets} batteryPercent={chaosBattery}
             onStart={() => setChaosRunning(true)} onStop={() => setChaosRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark}
+            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark} nodeRadius={nodeRadius}
           />
         </div>
-        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500`}>
+        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500 flex flex-col`}>
           <OptimizedPanel
             nodes={optNodes} adjList={adjList} isRunning={optRunning} packets={optPackets} batteryPercent={optBattery}
             onStart={() => setOptRunning(true)} onStop={() => setOptRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark}
+            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark} nodeRadius={nodeRadius}
           />
         </div>
       </div>
@@ -625,7 +662,7 @@ export default function App() {
       {generated && (
         <div className={`w-full max-w-7xl ${theme.card} rounded-2xl shadow-sm border p-5 transition-colors duration-500`}>
           <h3 className={`text-[11px] font-bold uppercase tracking-widest mb-4 ${theme.textMuted}`}>
-            📊 Head-to-Head Comparison
+            📊 Global Network Head-to-Head
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
 
