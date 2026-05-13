@@ -10,7 +10,7 @@ const MAX_BATTERY = 10000;
 // ─── Chaos Simulation Panel ──────────────────────────────────────────────────
 function ChaosPanel({
   nodes, adjList, isRunning, collisions, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeClick
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; collisions: number; packets: number; batteryPercent: number;
@@ -54,8 +54,11 @@ function ChaosPanel({
             const isSelected = selectedNode === node.id;
             return (
               <g key={node.id} 
-                 onClick={() => canEdit && onNodeClick(node.id)}
-                 className={canEdit ? "cursor-pointer" : ""}>
+                 onContextMenu={(e) => {
+                 e.preventDefault(); // Stops the browser right-click menu
+                 if (canEdit) onNodeRightClick(node.id);
+                 }}
+                className={canEdit ? "cursor-pointer" : ""}>
                 {isRunning && node.state === 'TRANSMIT' &&
                   <circle cx={node.x} cy={node.y} r="22" className="fill-green-200 animate-ping opacity-60 pointer-events-none" />}
                 {isRunning && node.state === 'COLLISION' &&
@@ -105,7 +108,7 @@ function ChaosPanel({
 // ─── Optimized Simulation Panel ───────────────────────────────────────────────
 function OptimizedPanel({
   nodes, adjList, isRunning, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeClick
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; packets: number; batteryPercent: number;
@@ -151,9 +154,12 @@ function OptimizedPanel({
             const assignedColor = node.color >= 0 ? slotColors[node.color % slotColors.length] : 'fill-slate-300';
             
             return (
-              <g key={node.id}
-                 onClick={() => canEdit && onNodeClick(node.id)}
-                 className={canEdit ? "cursor-pointer" : ""}>
+              <g key={node.id} 
+   onContextMenu={(e) => {
+     e.preventDefault(); // Stops the browser right-click menu
+     if (canEdit) onNodeRightClick(node.id);
+   }}
+   className={canEdit ? "cursor-pointer" : ""}>
                 {isRunning && node.state === 'TRANSMIT' &&
                   <circle cx={node.x} cy={node.y} r="22" className="fill-blue-200 animate-ping opacity-60 pointer-events-none" />}
 
@@ -438,7 +444,7 @@ export default function App() {
             collisions={chaosCollisions} packets={chaosPackets}
             batteryPercent={chaosBattery}
             onStart={() => setChaosRunning(true)} onStop={() => setChaosRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeClick={handleNodeClick}
+            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick}
           />
         </div>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
@@ -447,7 +453,7 @@ export default function App() {
             isRunning={optRunning}
             packets={optPackets} batteryPercent={optBattery}
             onStart={() => setOptRunning(true)} onStop={() => setOptRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeClick={handleNodeClick}
+            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick}
           />
         </div>
       </div>
