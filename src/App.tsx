@@ -10,12 +10,14 @@ const MAX_BATTERY = 10000;
 // ─── Chaos Simulation Panel ──────────────────────────────────────────────────
 function ChaosPanel({
   nodes, adjList, isRunning, collisions, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; collisions: number; packets: number; batteryPercent: number;
   onStart: () => void; onStop: () => void;
-  canEdit: boolean; selectedNode: string | null; onNodeClick: (id: string) => void;
+  canEdit: boolean; selectedNode: string | null; 
+  onNodeRightClick: (id: string) => void;
+  onNodeLeftClick: (id: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -105,15 +107,17 @@ function ChaosPanel({
   );
 }
 
-// ─── Optimized Simulation Panel ───────────────────────────────────────────────
+// ─── Optimized Simulation Panel ──────────────────────────────────────────────
 function OptimizedPanel({
   nodes, adjList, isRunning, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick
+  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick
 }: {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
   isRunning: boolean; packets: number; batteryPercent: number;
   onStart: () => void; onStop: () => void;
-  canEdit: boolean; selectedNode: string | null; onNodeClick: (id: string) => void;
+  canEdit: boolean; selectedNode: string | null; 
+  onNodeRightClick: (id: string) => void;
+  onNodeLeftClick: (id: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
