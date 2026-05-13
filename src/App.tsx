@@ -14,7 +14,6 @@ const getTheme = (isDark: boolean) => ({
   text: isDark ? 'text-slate-200' : 'text-slate-800',
   textMuted: isDark ? 'text-slate-400' : 'text-slate-500',
   gridBg: isDark ? 'bg-[#0B1020] border-[#1e2746]' : 'bg-slate-50 border-orange-100',
-  // Line 16: Updated for high visibility
   edgeLine: isDark ? '#475569' : '#94a3b8', 
 });
 
@@ -55,7 +54,6 @@ function ChaosPanel({
 
       <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
         <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
-          {/* Lines 57-66: Highly visible edges */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
@@ -117,7 +115,7 @@ function ChaosPanel({
           <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Collisions</div>
         </div>
         <div className={`rounded-lg p-2 border transition-colors duration-500 ${batteryPercent > 50 ? (isDark ? 'bg-green-900/20 border-green-900/50' : 'bg-green-50 border-green-100') : batteryPercent > 20 ? (isDark ? 'bg-yellow-900/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-100') : (isDark ? 'bg-red-900/20 border-red-900/50' : 'bg-red-50 border-red-100')}`}>
-          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-500' : batteryPercent > 20 ? 'text-yellow-500' : 'text-red-500'}`}>
+          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-600' : batteryPercent > 20 ? 'text-yellow-600' : 'text-red-600'}`}>
             {Math.round(batteryPercent)}%
           </div>
           <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Battery</div>
@@ -165,7 +163,6 @@ function OptimizedPanel({
 
       <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
         <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
-          {/* Lines 144-153: Highly visible edges */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
@@ -232,7 +229,7 @@ function OptimizedPanel({
           <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Collisions</div>
         </div>
         <div className={`rounded-lg p-2 border transition-colors duration-500 ${batteryPercent > 50 ? (isDark ? 'bg-green-900/20 border-green-900/50' : 'bg-green-50 border-green-100') : batteryPercent > 20 ? (isDark ? 'bg-yellow-900/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-100') : (isDark ? 'bg-red-900/20 border-red-900/50' : 'bg-red-50 border-red-100')}`}>
-          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-500' : batteryPercent > 20 ? 'text-yellow-500' : 'text-red-500'}`}>
+          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-600' : batteryPercent > 20 ? 'text-yellow-600' : 'text-red-600'}`}>
             {Math.round(batteryPercent)}%
           </div>
           <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Battery</div>
@@ -384,7 +381,10 @@ export default function App() {
     if (!chaosRunning) return;
     const interval = setInterval(() => {
       setChaosNodes(currentNodes => {
-        const attempting = new Set(currentNodes.filter(() => Math.random() < 0.20).map(n => n.id));
+        // Only nodes with battery can attempt transmission
+        const attempting = new Set(
+          currentNodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id)
+        );
         const collided = new Set<string>();
         attempting.forEach(id => {
           const neighbors = adjList.get(id) || [];
@@ -393,6 +393,10 @@ export default function App() {
 
         let tickCollisions = 0, tickSuccesses = 0;
         const updated = currentNodes.map(node => {
+          // If battery is out, node is dead
+          if (node.battery <= 0) {
+            return { ...node, state: 'SLEEP' as const };
+          }
           if (collided.has(node.id)) {
             tickCollisions++;
             return { ...node, state: 'COLLISION' as const, battery: Math.max(0, node.battery - 300) };
@@ -422,11 +426,16 @@ export default function App() {
       setOptNodes(currentNodes => {
         let tickSuccesses = 0;
         const updated = currentNodes.map(node => {
-          const transmitting = node.color === nextSlot;
+          // Node only transmits if it has battery and it's its slot
+          const transmitting = node.color === nextSlot && node.battery > 0;
           if (transmitting) tickSuccesses++;
+          
+          // If battery is 0, no more drain or transmission
+          const drain = transmitting ? 150 : (node.battery > 0 ? 5 : 0);
+          
           return {
             ...node,
-            battery: Math.max(0, node.battery - (transmitting ? 150 : 5)),
+            battery: Math.max(0, node.battery - drain),
             state: transmitting ? 'TRANSMIT' as const : 'SLEEP' as const,
           };
         });
@@ -613,7 +622,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Common Data - Interference Edges */}
                 <div className="pt-2">
                   <span className={`text-[10px] font-bold uppercase tracking-wider block mb-2 ${theme.textMuted}`}>Manage Interferences ({neighbors.length})</span>
                   <div className="flex flex-wrap gap-2">
