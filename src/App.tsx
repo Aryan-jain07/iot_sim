@@ -56,7 +56,7 @@ function ChaosPanel({
             const isSelected = selectedNode === node.id;
             return (
               <g key={node.id} 
-                 onClick={() => onNodeLeftClick(node.id)} 
+                 onClick={() => onNodeLeftClick(node.id)}
                  onContextMenu={(e) => {
                    e.preventDefault(); 
                    if (canEdit) onNodeRightClick(node.id);
@@ -108,7 +108,7 @@ function ChaosPanel({
   );
 }
 
-// ─── Optimized Simulation Panel ──────────────────────────────────────────────
+// ─── Optimized Simulation Panel ───────────────────────────────────────────────
 function OptimizedPanel({
   nodes, adjList, isRunning, packets, batteryPercent,
   onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick
@@ -159,8 +159,8 @@ function OptimizedPanel({
             const assignedColor = node.color >= 0 ? slotColors[node.color % slotColors.length] : 'fill-slate-300';
             
             return (
-              <g key={node.id} 
-                 onClick={() => onNodeLeftClick(node.id)} 
+              <g key={node.id}
+                 onClick={() => onNodeLeftClick(node.id)}
                  onContextMenu={(e) => {
                    e.preventDefault(); 
                    if (canEdit) onNodeRightClick(node.id);
@@ -217,6 +217,7 @@ export default function App() {
   const [nodeCount, setNodeCount] = useState(12);
   const [editMode, setEditMode] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [inspectedNodeId, setInspectedNodeId] = useState<string | null>(null);
 
   const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
   const [generated, setGenerated] = useState(false);
@@ -240,7 +241,6 @@ export default function App() {
 
   // ── Network Generation ────────────────────────────────────────────────────
   const handleGenerate = () => {
-    // Prevent huge numbers from breaking the canvas
     const safeCount = Math.min(Math.max(nodeCount, 2), 50);
     const base = generateNodes(safeCount, CANVAS_WIDTH, CANVAS_HEIGHT);
     const adj = buildAdjacencyList(base, INTERFERENCE_RADIUS);
@@ -253,6 +253,7 @@ export default function App() {
     
     resetSimulations();
     setGenerated(true);
+    setInspectedNodeId(null);
   };
 
   const handleClearEdges = () => {
@@ -277,7 +278,7 @@ export default function App() {
   // ── Manual Edge Editing ───────────────────────────────────────────────────
   const reassignColors = (newAdj: Map<string, string[]>) => {
     setOptNodes(prev => {
-      const base = prev.map(n => ({ ...n, color: -1 })); // Reset old colors
+      const base = prev.map(n => ({ ...n, color: -1 })); 
       const optimized = assignTimeSlots(base, newAdj);
       setOptMaxSlot(optimized.length > 0 ? Math.max(...optimized.map(n => n.color)) : 0);
       return optimized;
@@ -286,11 +287,10 @@ export default function App() {
 
   const handleNodeClick = (nodeId: string) => {
     if (!selectedNode) {
-      setSelectedNode(nodeId); // Select first node
+      setSelectedNode(nodeId); 
     } else if (selectedNode === nodeId) {
-      setSelectedNode(null);   // Deselect if clicking same node
+      setSelectedNode(null);   
     } else {
-      // Toggle edge between selectedNode and clicked node
       setAdjList(prev => {
         const next = new Map(prev);
         const edges1 = next.get(selectedNode) || [];
@@ -303,11 +303,9 @@ export default function App() {
           next.set(selectedNode, [...edges1, nodeId]);
           next.set(nodeId, [...edges2, selectedNode]);
         }
-        reassignColors(next); // Update coloring immediately
+        reassignColors(next); 
         return next;
       });
-      // We purposefully do NOT set selectedNode to null here.
-      // This allows the user to quickly connect one node to many others!
     }
   };
 
@@ -436,13 +434,74 @@ export default function App() {
         {/* Edit mode helper text */}
         {canEdit && (
           <div className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 px-4 py-2 rounded-lg animate-pulse">
-            <strong>Edit Mode:</strong> Click a node to select it, then click other nodes to connect or disconnect them.
+            <strong>Edit Mode:</strong> Right-click a node to select it, then Right-click other nodes to connect them. Left-click a node to view its details.
           </div>
         )}
       </div>
 
+      {/* Node Inspector Panel */}
+      {inspectedNodeId && (
+        <div className="w-full max-w-4xl bg-white p-4 rounded-xl shadow-sm border border-indigo-100 mb-6 flex items-center justify-between animate-fade-in">
+          {(() => {
+            const node = optNodes.find(n => n.id === inspectedNodeId);
+            if (!node) return null;
+            const neighbors = adjList.get(node.id) || [];
+            
+            return (
+              <>
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg
+                    ${node.color === 0 ? 'bg-blue-500' : node.color === 1 ? 'bg-emerald-500' : node.color === 2 ? 'bg-purple-500' : node.color === 3 ? 'bg-amber-500' : node.color === 4 ? 'bg-pink-500' : 'bg-slate-400'}`}>
+                    {node.id.replace('Node_', '')}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Node Details</h3>
+                    <p className="text-xs text-slate-500">ID: {node.id}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-8">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-slate-400 font-semibold uppercase">Assigned Slot</span>
+                    <span className="font-mono font-bold text-slate-700">
+                      {node.color >= 0 ? `Slot ${node.color}` : 'Unassigned'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-slate-400 font-semibold uppercase">Current State</span>
+                    <span className={`font-mono font-bold ${node.state === 'TRANSMIT' ? 'text-blue-600' : 'text-slate-500'}`}>
+                      {node.state}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-slate-400 font-semibold uppercase">Interfering Neighbors</span>
+                    <span className="font-mono font-bold text-orange-500">
+                      {neighbors.length} ({neighbors.map(n => n.replace('Node_', '')).join(', ') || 'None'})
+                    </span>
+                  </div>
+                  <div className="flex flex-col min-w-[100px]">
+                    <span className="text-xs text-slate-400 font-semibold uppercase">Battery</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-slate-700">{Math.round((node.battery / MAX_BATTERY) * 100)}%</span>
+                      <div className="w-16 bg-slate-200 rounded-full h-2">
+                        <div className="bg-green-500 h-2 rounded-full" style={{ width: `${(node.battery / MAX_BATTERY) * 100}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button onClick={() => setInspectedNodeId(null)} className="text-slate-400 hover:text-slate-600 px-2 font-bold text-lg">
+                  ✕
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Two simulation panels */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+      <div className="w-full max-w-7xl grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
           <ChaosPanel
             nodes={chaosNodes} adjList={adjList}
             isRunning={chaosRunning}
@@ -451,7 +510,7 @@ export default function App() {
             onStart={() => setChaosRunning(true)} onStop={() => setChaosRunning(false)}
             canEdit={canEdit} selectedNode={selectedNode} 
             onNodeRightClick={handleNodeClick}
-            onNodeLeftClick={setInspectedNodeId} 
+            onNodeLeftClick={setInspectedNodeId}
           />
         </div>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
@@ -462,10 +521,10 @@ export default function App() {
             onStart={() => setOptRunning(true)} onStop={() => setOptRunning(false)}
             canEdit={canEdit} selectedNode={selectedNode} 
             onNodeRightClick={handleNodeClick}
-            onNodeLeftClick={setInspectedNodeId} 
+            onNodeLeftClick={setInspectedNodeId}
           />
-        </div>      
-    </div>
+        </div>
+      </div>
 
       {/* Comparison strip */}
       {generated && (
