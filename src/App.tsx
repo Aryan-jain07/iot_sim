@@ -56,11 +56,12 @@ function ChaosPanel({
             const isSelected = selectedNode === node.id;
             return (
               <g key={node.id} 
+                 onClick={() => onNodeLeftClick(node.id)} 
                  onContextMenu={(e) => {
-                 e.preventDefault(); // Stops the browser right-click menu
-                 if (canEdit) onNodeRightClick(node.id);
+                   e.preventDefault(); 
+                   if (canEdit) onNodeRightClick(node.id);
                  }}
-                className={canEdit ? "cursor-pointer" : ""}>
+                 className="cursor-pointer">
                 {isRunning && node.state === 'TRANSMIT' &&
                   <circle cx={node.x} cy={node.y} r="22" className="fill-green-200 animate-ping opacity-60 pointer-events-none" />}
                 {isRunning && node.state === 'COLLISION' &&
@@ -159,11 +160,12 @@ function OptimizedPanel({
             
             return (
               <g key={node.id} 
-   onContextMenu={(e) => {
-     e.preventDefault(); // Stops the browser right-click menu
-     if (canEdit) onNodeRightClick(node.id);
-   }}
-   className={canEdit ? "cursor-pointer" : ""}>
+                 onClick={() => onNodeLeftClick(node.id)} 
+                 onContextMenu={(e) => {
+                   e.preventDefault(); 
+                   if (canEdit) onNodeRightClick(node.id);
+                 }}
+                 className="cursor-pointer">
                 {isRunning && node.state === 'TRANSMIT' &&
                   <circle cx={node.x} cy={node.y} r="22" className="fill-blue-200 animate-ping opacity-60 pointer-events-none" />}
 
@@ -440,15 +442,16 @@ export default function App() {
       </div>
 
       {/* Two simulation panels */}
-      <div className="w-full max-w-7xl grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
           <ChaosPanel
             nodes={chaosNodes} adjList={adjList}
             isRunning={chaosRunning}
             collisions={chaosCollisions} packets={chaosPackets}
             batteryPercent={chaosBattery}
             onStart={() => setChaosRunning(true)} onStop={() => setChaosRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick}
+            canEdit={canEdit} selectedNode={selectedNode} 
+            onNodeRightClick={handleNodeClick}
+            onNodeLeftClick={setInspectedNodeId} 
           />
         </div>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
@@ -457,10 +460,12 @@ export default function App() {
             isRunning={optRunning}
             packets={optPackets} batteryPercent={optBattery}
             onStart={() => setOptRunning(true)} onStop={() => setOptRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick}
+            canEdit={canEdit} selectedNode={selectedNode} 
+            onNodeRightClick={handleNodeClick}
+            onNodeLeftClick={setInspectedNodeId} 
           />
-        </div>
-      </div>
+        </div>      
+    </div>
 
       {/* Comparison strip */}
       {generated && (
