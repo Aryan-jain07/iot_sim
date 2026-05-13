@@ -87,7 +87,6 @@ function ChaosPanel({
         </svg>
       </div>
 
-      {/* Mini stats */}
       <div className="grid grid-cols-3 gap-2 text-center text-sm">
         <div className="bg-orange-50 rounded-lg p-2 border border-orange-100">
           <div className="font-bold text-orange-600">{packets}</div>
@@ -213,7 +212,6 @@ function OptimizedPanel({
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  // Config & Topology
   const [nodeCount, setNodeCount] = useState(12);
   const [editMode, setEditMode] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -222,13 +220,11 @@ export default function App() {
   const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
   const [generated, setGenerated] = useState(false);
 
-  // Chaos state
   const [chaosNodes, setChaosNodes] = useState<IoTNode[]>([]);
   const [chaosRunning, setChaosRunning] = useState(false);
   const [chaosCollisions, setChaosCollisions] = useState(0);
   const [chaosPackets, setChaosPackets] = useState(0);
 
-  // Optimized state
   const [optNodes, setOptNodes] = useState<IoTNode[]>([]);
   const [optRunning, setOptRunning] = useState(false);
   const [_optCurrentSlot, setOptCurrentSlot] = useState(0);
@@ -275,7 +271,7 @@ export default function App() {
     optSlotRef.current = 0;
   }
 
-  // ── Manual Edge Editing ───────────────────────────────────────────────────
+  // ── Edge & Node Editing ───────────────────────────────────────────────────
   const reassignColors = (newAdj: Map<string, string[]>) => {
     setOptNodes(prev => {
       const base = prev.map(n => ({ ...n, color: -1 })); 
@@ -285,6 +281,7 @@ export default function App() {
     });
   };
 
+  // 1. Right Click Toggle Edge Logic
   const handleNodeClick = (nodeId: string) => {
     if (!selectedNode) {
       setSelectedNode(nodeId); 
@@ -309,8 +306,52 @@ export default function App() {
     }
   };
 
+  // 2. Explicit Edge Deletion from Inspector Panel
+  const handleRemoveEdge = (nodeA: string, nodeB: string) => {
+    setAdjList(prev => {
+      const next = new Map(prev);
+      const edgesA = next.get(nodeA) || [];
+      const edgesB = next.get(nodeB) || [];
+      next.set(nodeA, edgesA.filter(id => id !== nodeB));
+      next.set(nodeB, edgesB.filter(id => id !== nodeA));
+      reassignColors(next);
+      return next;
+    });
+  };
+
+  // 3. Complete Node Deletion from Inspector Panel
+  const handleDeleteNode = (nodeIdToDelete: string) => {
+    // Remove from Chaos Array
+    setChaosNodes(prev => prev.filter(n => n.id !== nodeIdToDelete));
+    
+    // Clean Adjacency List & Remove from Opt Array
+    setAdjList(prevAdj => {
+      const nextAdj = new Map(prevAdj);
+      nextAdj.delete(nodeIdToDelete); // Delete its own entry
+      
+      // Delete references to it from all other nodes
+      nextAdj.forEach((neighbors, key) => {
+        nextAdj.set(key, neighbors.filter(id => id !== nodeIdToDelete));
+      });
+      
+      // Immediately calculate new colors for the surviving nodes
+      setOptNodes(prevOpt => {
+        const remaining = prevOpt.filter(n => n.id !== nodeIdToDelete).map(n => ({ ...n, color: -1 }));
+        const optimized = assignTimeSlots(remaining, nextAdj);
+        setOptMaxSlot(optimized.length > 0 ? Math.max(...optimized.map(n => n.color)) : 0);
+        return optimized;
+      });
+      
+      return nextAdj;
+    });
+
+    if (selectedNode === nodeIdToDelete) setSelectedNode(null);
+    setInspectedNodeId(null); // Close the inspector panel
+  };
+
+
   // ── Run Controls ──────────────────────────────────────────────────────────
-  const handleRunBoth = () => { setChaosRunning(true); setOptRunning(true); setEditMode(false); setSelectedNode(null); };
+  const handleRunBoth = () => { setChaosRunning(true); setOptRunning(true); setEditMode(false); setSelectedNode(null); setInspectedNodeId(null); };
   const handleStopBoth = () => { setChaosRunning(false); setOptRunning(false); };
 
   // ── Chaos Loop ────────────────────────────────────────────────────────────
@@ -399,7 +440,7 @@ export default function App() {
 
           <button onClick={handleGenerate} disabled={eitherRunning}
             className="bg-slate-800 text-white px-4 py-1.5 rounded-lg hover:bg-slate-700 transition text-sm font-medium disabled:opacity-50">
-            🔄 Auto-Generate (Distance)
+            🔄 Auto-Generate
           </button>
           
           <div className="h-6 w-px bg-slate-200 mx-1"></div>
@@ -434,66 +475,91 @@ export default function App() {
         {/* Edit mode helper text */}
         {canEdit && (
           <div className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 px-4 py-2 rounded-lg animate-pulse">
-            <strong>Edit Mode:</strong> Right-click a node to select it, then Right-click other nodes to connect them. Left-click a node to view its details.
+            <strong>Edit Mode:</strong> <b>Right-click</b> nodes to connect them. <b>Left-click</b> a node to view its details or delete it.
           </div>
         )}
       </div>
 
       {/* Node Inspector Panel */}
       {inspectedNodeId && (
-        <div className="w-full max-w-4xl bg-white p-4 rounded-xl shadow-sm border border-indigo-100 mb-6 flex items-center justify-between animate-fade-in">
+        <div className="w-full max-w-5xl bg-white p-5 rounded-xl shadow-sm border border-indigo-200 mb-6 flex flex-wrap items-center justify-between animate-fade-in relative">
+          <button onClick={() => setInspectedNodeId(null)} className="absolute top-2 right-4 text-slate-400 hover:text-slate-600 font-bold text-xl">
+            ✕
+          </button>
+
           {(() => {
             const node = optNodes.find(n => n.id === inspectedNodeId);
             if (!node) return null;
             const neighbors = adjList.get(node.id) || [];
             
             return (
-              <>
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg
+              <div className="flex w-full items-center justify-between">
+                <div className="flex items-center gap-6">
+                  {/* Avatar */}
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-inner
                     ${node.color === 0 ? 'bg-blue-500' : node.color === 1 ? 'bg-emerald-500' : node.color === 2 ? 'bg-purple-500' : node.color === 3 ? 'bg-amber-500' : node.color === 4 ? 'bg-pink-500' : 'bg-slate-400'}`}>
                     {node.id.replace('Node_', '')}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800">Node Details</h3>
-                    <p className="text-xs text-slate-500">ID: {node.id}</p>
-                  </div>
-                </div>
+                  
+                  {/* Core Details */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex gap-8">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-slate-400 font-semibold uppercase">Assigned Slot</span>
+                        <span className="font-mono font-bold text-slate-700 text-lg">
+                          {node.color >= 0 ? `Slot ${node.color}` : 'Unassigned'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col min-w-[120px]">
+                        <span className="text-xs text-slate-400 font-semibold uppercase">Battery Status</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="font-mono font-bold text-slate-700">{Math.round((node.battery / MAX_BATTERY) * 100)}%</span>
+                          <div className="w-16 bg-slate-200 rounded-full h-2.5">
+                            <div className="bg-green-500 h-2.5 rounded-full" style={{ width: `${(node.battery / MAX_BATTERY) * 100}%` }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                <div className="flex gap-8">
-                  <div className="flex flex-col">
-                    <span className="text-xs text-slate-400 font-semibold uppercase">Assigned Slot</span>
-                    <span className="font-mono font-bold text-slate-700">
-                      {node.color >= 0 ? `Slot ${node.color}` : 'Unassigned'}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs text-slate-400 font-semibold uppercase">Current State</span>
-                    <span className={`font-mono font-bold ${node.state === 'TRANSMIT' ? 'text-blue-600' : 'text-slate-500'}`}>
-                      {node.state}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs text-slate-400 font-semibold uppercase">Interfering Neighbors</span>
-                    <span className="font-mono font-bold text-orange-500">
-                      {neighbors.length} ({neighbors.map(n => n.replace('Node_', '')).join(', ') || 'None'})
-                    </span>
-                  </div>
-                  <div className="flex flex-col min-w-[100px]">
-                    <span className="text-xs text-slate-400 font-semibold uppercase">Battery</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-slate-700">{Math.round((node.battery / MAX_BATTERY) * 100)}%</span>
-                      <div className="w-16 bg-slate-200 rounded-full h-2">
-                        <div className="bg-green-500 h-2 rounded-full" style={{ width: `${(node.battery / MAX_BATTERY) * 100}%` }}></div>
+                    {/* Interactive Neighbor Chips */}
+                    <div className="flex flex-col">
+                      <span className="text-xs text-slate-400 font-semibold uppercase mb-1">Interfering Neighbors</span>
+                      <div className="flex flex-wrap gap-2">
+                        {neighbors.length === 0 ? (
+                          <span className="text-sm font-bold text-slate-400 italic">No interference detected</span>
+                        ) : (
+                          neighbors.map(nId => (
+                            <div key={nId} className="flex items-center bg-orange-50 text-orange-700 border border-orange-200 pl-2 pr-1 py-1 rounded text-xs font-bold">
+                              Node {nId.replace('Node_', '')}
+                              {canEdit && (
+                                <button 
+                                  onClick={() => handleRemoveEdge(node.id, nId)} 
+                                  className="ml-1 text-orange-400 hover:text-red-500 hover:bg-orange-100 rounded-full w-5 h-5 flex items-center justify-center transition"
+                                  title="Remove this connection"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <button onClick={() => setInspectedNodeId(null)} className="text-slate-400 hover:text-slate-600 px-2 font-bold text-lg">
-                  ✕
-                </button>
-              </>
+                {/* Delete Node Action */}
+                {canEdit && (
+                  <div className="flex flex-col justify-center ml-4 border-l border-slate-100 pl-6 h-full">
+                    <button 
+                      onClick={() => handleDeleteNode(node.id)} 
+                      className="bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-4 py-2 rounded-lg text-sm font-bold border border-red-200 transition shadow-sm flex items-center gap-2"
+                    >
+                      <span className="text-lg">🗑️</span> Delete Node
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })()}
         </div>
