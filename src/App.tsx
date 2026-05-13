@@ -14,7 +14,8 @@ const getTheme = (isDark: boolean) => ({
   text: isDark ? 'text-slate-200' : 'text-slate-800',
   textMuted: isDark ? 'text-slate-400' : 'text-slate-500',
   gridBg: isDark ? 'bg-[#0B1020] border-[#1e2746]' : 'bg-slate-50 border-orange-100',
-  edgeLine: isDark ? '#1e293b' : '#e2e8f0',
+  // Line 16: Updated for high visibility
+  edgeLine: isDark ? '#475569' : '#94a3b8', 
 });
 
 // ─── Chaos Simulation Panel ──────────────────────────────────────────────────
@@ -54,14 +55,14 @@ function ChaosPanel({
 
       <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
         <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
-          {/* Draw Edges first so they are underneath nodes */}
+          {/* Lines 57-66: Highly visible edges */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
               if (neighbor && node.id < neighbor.id) {
                 return <line key={`${node.id}-${neighborId}`}
                   x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="1.5" strokeDasharray="4 4" className="transition-colors duration-500 opacity-60" />;
+                  stroke={theme.edgeLine} strokeWidth="2.5" strokeDasharray="6 4" className="transition-colors duration-500" />;
               }
               return null;
             })
@@ -164,13 +165,14 @@ function OptimizedPanel({
 
       <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
         <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
+          {/* Lines 144-153: Highly visible edges */}
           {nodes.map(node =>
             (adjList.get(node.id) || []).map(neighborId => {
               const neighbor = nodes.find(n => n.id === neighborId);
               if (neighbor && node.id < neighbor.id) {
                 return <line key={`${node.id}-${neighborId}`}
                   x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="1.5" strokeDasharray="4 4" className="transition-colors duration-500 opacity-60" />;
+                  stroke={theme.edgeLine} strokeWidth="2.5" strokeDasharray="6 4" className="transition-colors duration-500" />;
               }
               return null;
             })
@@ -268,7 +270,6 @@ export default function App() {
   const eitherRunning = chaosRunning || optRunning;
   const canEdit = editMode && !eitherRunning;
 
-  // Dynamic sizing based on how many nodes exist on the canvas
   const calculateRadius = (count: number) => Math.max(6, Math.min(22, 28 - (count * 0.4)));
   const nodeRadius = calculateRadius(optNodes.length > 0 ? optNodes.length : nodeCount);
 
