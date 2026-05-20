@@ -277,6 +277,19 @@ export default function App() {
   const calculateRadius = (count: number) => Math.max(6, Math.min(22, 28 - (count * 0.4)));
   const nodeRadius = calculateRadius(optNodes.length > 0 ? optNodes.length : nodeCount);
 
+  const handleRunBoth = () => { 
+    setChaosRunning(true); 
+    setOptRunning(true); 
+    setEditMode(false); 
+    setSelectedNode(null); 
+    setInspectedNodeId(null); 
+  };
+
+  const handleStopBoth = () => { 
+    setChaosRunning(false); 
+    setOptRunning(false); 
+  };
+
   const computeSchedule = (baseNodes: IoTNode[], targetAdj: Map<string, string[]>) => {
     if (algorithm === 'annealing') {
       return assignSlotsAnnealing(baseNodes, targetAdj);
@@ -387,7 +400,6 @@ export default function App() {
     setInspectedNodeId(null); 
   };
 
-  // Re-run color processing when scheduling algorithm is swapped via UI dropdown
   useEffect(() => {
     if (generated && !eitherRunning) {
       reassignColors(adjList);
@@ -531,7 +543,7 @@ export default function App() {
             className={`px-4 py-1.5 rounded-lg border transition text-sm font-bold disabled:opacity-50 shadow-sm
               ${editMode 
                 ? (isDark ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-purple-100 text-purple-700 border-purple-300') 
-                : (isDark ? 'bg-transparent text-slate-300 border-[#334155] hover:bg-[#1e293b]' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}`}>
+                : (isDark ? 'bg-transparent text-slate-300 border-[#334155] hover:bg-[#1e293b]' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50' Ehrenmarke)}`}>
             {editMode ? '✍️ Editing Active...' : '✏️ Draw Connections'}
           </button>
 
@@ -574,10 +586,10 @@ export default function App() {
             
             return (
               <>
-                <div className="indigo-box flex justify-between items-center border-b pb-3 border-slate-700/30">
+                <div className="flex justify-between items-center border-b pb-3 border-slate-700/30">
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-inner
-                      ${optNode.color === 0 ? 'bg-cyan-500' : optNode.color === 1 ? 'bg-purple-500' : optNode.color === 2 ? 'bg-pink-500' : optNode.color === 3 ? 'bg-blue-500' : optNode.color === 4 ? 'bg-orange-500' : 'bg-slate-500'}`}>
+                      ${optNode.color === 0 ? 'bg-cyan-500' : optNode.color === 1 ? 'bg-purple-500' : optNode.color === 2 ? 'bg-pink-500' : optNode.color === 3 ? 'bg-blue-500' : optNode.color === 4 ? 'bg-orange-500' : 'bg-slate-505'}`}>
                       {optNode.id.replace('Node_', '')}
                     </div>
                     <div>
@@ -698,11 +710,11 @@ export default function App() {
 
       {/* 📊 Advanced Algorithmic Benchmarking Panel */}
       {generated && (() => {
-        const greedyResult = assignTimeSlots(chaosNodes.map(n => ({ ...n })), adjList);
-        const annealingResult = assignSlotsAnnealing(chaosNodes.map(n => ({ ...n })), adjList);
-        const tabuResult = assignSlotsTabu(chaosNodes.map(n => ({ ...n })), adjList);
+        const greedyResult = assignTimeSlots(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
+        const annealingResult = assignSlotsAnnealing(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
+        const tabuResult = assignSlotsTabu(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
 
-        const getUniqueSlots = (nodesArr: any[]) => 
+        const getUniqueSlots = (nodesArr: IoTNode[]) => 
           new Set(nodesArr.filter(n => n.color >= 0).map(n => n.color)).size;
 
         const greedySlots = getUniqueSlots(greedyResult);
@@ -759,7 +771,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Global metrics ribbon inside matrix */}
+            {/* Global metrics ribbon */}
             <div className="mt-6 pt-5 border-t border-slate-800/60 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-xs">
               <div>
                 <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Chaos Collision Rate</div>
