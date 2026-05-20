@@ -534,12 +534,12 @@ export default function App() {
           <div className={`h-6 w-px ${isDark ? 'bg-[#334155]' : 'bg-slate-200'} mx-1`}></div>
           
           <button onClick={() => { setEditMode(!editMode); setSelectedNode(null); }} disabled={!generated || eitherRunning}
-  className={`px-4 py-1.5 rounded-lg border transition text-sm font-bold disabled:opacity-50 shadow-sm
-    ${editMode 
-      ? (isDark ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-purple-100 text-purple-700 border-purple-300') 
-      : (isDark ? 'bg-transparent text-slate-300 border-[#334155] hover:bg-[#1e293b]' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}`}>
-  {editMode ? '✍️ Editing Active...' : '✏️ Draw Connections'}
-</button>
+            className={`px-4 py-1.5 rounded-lg border transition text-sm font-bold disabled:opacity-50 shadow-sm
+              ${editMode 
+                ? (isDark ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-purple-100 text-purple-700 border-purple-300') 
+                : (isDark ? 'bg-transparent text-slate-300 border-[#334155] hover:bg-[#1e293b]' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}`}>
+            {editMode ? '✍️ Editing Active...' : '✏️ Draw Connections'}
+          </button>
 
           <div className={`h-6 w-px ${isDark ? 'bg-[#334155]' : 'bg-slate-200'} mx-1`}></div>
 
