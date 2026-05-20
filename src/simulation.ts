@@ -7,7 +7,6 @@ function countCollisions(nodes: IoTNode[], adjList: Map<string, string[]>): numb
     const neighbors = adjList.get(node.id) || [];
     neighbors.forEach(neighborId => {
       const neighbor = nodes.find(n => n.id === neighborId);
-      // If neighbors share a time slot, it's an active link collision
       if (neighbor && node.color === neighbor.color && node.color !== -1) {
         collisions++;
       }
@@ -16,7 +15,43 @@ function countCollisions(nodes: IoTNode[], adjList: Map<string, string[]>): numb
   return collisions / 2; // Edges are bidirectional
 }
 
-// 1. GREEDY APPROACH (Constructive baseline)
+// ─── Core Network Generation Utilities ───
+export function generateNodes(count: number, width: number, height: number): IoTNode[] {
+  const nodes: IoTNode[] = [];
+  const padding = 40;
+  for (let i = 0; i < count; i++) {
+    nodes.push({
+      id: `Node_${i + 1}`,
+      x: padding + Math.random() * (width - padding * 2),
+      y: padding + Math.random() * (height - padding * 2),
+      battery: 10000,
+      state: 'IDLE',
+      color: -1
+    });
+  }
+  return nodes;
+}
+
+export function buildAdjacencyList(nodes: IoTNode[], radius: number): Map<string, string[]> {
+  const adjList = new Map<string, string[]>();
+  nodes.forEach(n => adjList.set(n.id, []));
+
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= radius) {
+        adjList.get(nodes[i].id)?.push(nodes[j].id);
+        adjList.get(nodes[j].id)?.push(nodes[i].id);
+      }
+    }
+  }
+  return adjList;
+}
+
+// 1. GREEDY APPROACH
 export function assignTimeSlots(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
   const result = nodes.map(n => ({ ...n, color: -1 }));
   result.forEach(node => {
@@ -39,9 +74,8 @@ export function assignTimeSlots(nodes: IoTNode[], adjList: Map<string, string[]>
   return result;
 }
 
-// 2. SIMULATED ANNEALING APPROACH
+// 2. SIMULATED ANNEALING
 export function assignSlotsAnnealing(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
-  // Start with an initial state, then optimize it
   let currentSchedule = assignTimeSlots(nodes, adjList);
   let currentCost = countCollisions(currentSchedule, adjList);
   
@@ -51,14 +85,12 @@ export function assignSlotsAnnealing(nodes: IoTNode[], adjList: Map<string, stri
 
   while (temperature > 0.1) {
     const nextSchedule = currentSchedule.map(n => ({ ...n }));
-    // Tweak a random node's time slot window
     const randomNode = nextSchedule[Math.floor(Math.random() * nextSchedule.length)];
     randomNode.color = Math.floor(Math.random() * maxSlots);
 
     const nextCost = countCollisions(nextSchedule, adjList);
     const energyDelta = nextCost - currentCost;
 
-    // Thermodynamic decision check
     if (energyDelta < 0 || Math.random() < Math.exp(-energyDelta / temperature)) {
       currentSchedule = nextSchedule;
       currentCost = nextCost;
@@ -68,12 +100,11 @@ export function assignSlotsAnnealing(nodes: IoTNode[], adjList: Map<string, stri
   return currentSchedule;
 }
 
-// 3. TABU SEARCH APPROACH
+// 3. TABU SEARCH
 export function assignSlotsTabu(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
   let bestSchedule = assignTimeSlots(nodes, adjList);
   let currentSchedule = bestSchedule.map(n => ({ ...n }));
   
-  // Short-term memory map tracking: NodeID -> Forbidden until Iteration X
   const tabuList = new Map<string, number>(); 
   const maxIterations = 50;
   const tabuTenure = 5;
@@ -83,9 +114,8 @@ export function assignSlotsTabu(nodes: IoTNode[], adjList: Map<string, string[]>
     let bestMoveCost = Infinity;
     let chosenNodeId = '';
 
-    // Evaluate neighborhood slot modifications
     currentSchedule.forEach(node => {
-      if (tabuList.has(node.id) && (tabuList.get(node.id) || 0) > iter) return; // Skip tabu routes
+      if (tabuList.has(node.id) && (tabuList.get(node.id) || 0) > iter) return;
 
       for (let slot = 0; slot < 6; slot++) {
         if (slot === node.color) continue;
@@ -102,7 +132,7 @@ export function assignSlotsTabu(nodes: IoTNode[], adjList: Map<string, string[]>
 
     if (bestMoveSchedule) {
       currentSchedule = bestMoveSchedule;
-      tabuList.set(chosenNodeId, iter + tabuTenure); // Apply temporary Tabu restriction
+      tabuList.set(chosenNodeId, iter + tabuTenure);
 
       if (countCollisions(currentSchedule, adjList) < countCollisions(bestSchedule, adjList)) {
         bestSchedule = currentSchedule;
