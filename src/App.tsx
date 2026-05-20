@@ -667,56 +667,87 @@ export default function App() {
         </div>
       </div>
 
-      {/* Comparison strip */}
-      {generated && (
-        <div className={`w-full max-w-7xl ${theme.card} rounded-2xl shadow-sm border p-5 transition-colors duration-500`}>
-          <h3 className={`text-[11px] font-bold uppercase tracking-widest mb-4 ${theme.textMuted}`}>
-            📊 Global Network Head-to-Head
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+      {/* 📊 Advanced Algorithmic Benchmarking Panel */}
+{generated && (() => {
+  // Run background evaluations on the current topology matching your logic
+  const greedyResult = assignTimeSlots(chaosNodes.map(n => ({ ...n })), adjList);
+  const annealingResult = assignSlotsAnnealing(chaosNodes.map(n => ({ ...n })), adjList);
+  const tabuResult = assignSlotsTabu(chaosNodes.map(n => ({ ...n })), adjList);
 
-            <div className="flex flex-col gap-1">
-              <div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Collision Rate</div>
-              <div className="flex justify-around items-end">
-                <div><div className="text-2xl font-black text-red-500">{collisionRate}%</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Chaos</div></div>
-                <div className="text-slate-500 text-lg">vs</div>
-                <div><div className="text-2xl font-black text-green-500">0%</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Optimized</div></div>
-              </div>
-            </div>
+  const getUniqueSlots = (nodesArr: any[]) => 
+    new Set(nodesArr.filter(n => n.color >= 0).map(n => n.color)).size;
 
-            <div className="flex flex-col gap-1">
-              <div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Avg Battery</div>
-              <div className="flex justify-around items-end">
-                <div><div className="text-2xl font-black text-orange-500">{Math.round(chaosBattery)}%</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Chaos</div></div>
-                <div className="text-slate-500 text-lg">vs</div>
-                <div><div className="text-2xl font-black text-cyan-500">{Math.round(optBattery)}%</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Optimized</div></div>
-              </div>
-            </div>
+  const greedySlots = getUniqueSlots(greedyResult);
+  const annealingSlots = getUniqueSlots(annealingResult);
+  const tabuSlots = getUniqueSlots(tabuResult);
 
-            <div className="flex flex-col gap-1">
-              <div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Total Packets</div>
-              <div className="flex justify-around items-end">
-                <div><div className="text-2xl font-black text-orange-500">{chaosPackets}</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Chaos</div></div>
-                <div className="text-slate-500 text-lg">vs</div>
-                <div><div className="text-2xl font-black text-cyan-500">{optPackets}</div><div className={`text-[10px] font-bold uppercase ${theme.textMuted}`}>Optimized</div></div>
-              </div>
-            </div>
+  return (
+    <div className={`w-full max-w-7xl ${theme.card} rounded-2xl shadow-sm border p-6 transition-colors duration-500 mt-6`}>
+      <div className="flex flex-col mb-4">
+        <h3 className="text-sm font-black uppercase tracking-widest text-cyan-400">
+          🔮 Algorithmic Performance Benchmarking
+        </h3>
+        <p className={`text-xs ${theme.textMuted}`}>Live comparative metrics over the current graph topology</p>
+      </div>
 
-            <div className="flex flex-col items-center justify-center gap-1">
-              <div className={`text-[10px] font-bold uppercase ${theme.textMuted} mb-1`}>Optimized Advantage</div>
-              <div className="flex flex-col gap-1.5 w-full">
-                <div className={`text-xs px-2 py-1 rounded font-bold text-center ${isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700'}`}>
-                  {batteryAdvantage >= 0 ? '🔋 +' : '🔋 '}{batteryAdvantage}% battery
-                </div>
-                <div className={`text-xs px-2 py-1 rounded font-bold text-center ${isDark ? 'bg-cyan-900/30 text-cyan-400' : 'bg-cyan-100 text-cyan-700'}`}>
-                  {packetAdvantage >= 0 ? '📦 +' : '📦 '}{packetAdvantage}% throughput
-                </div>
-              </div>
-            </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        {/* Greedy Evaluation Card */}
+        <div className={`p-4 rounded-xl border ${algorithm === 'greedy' ? 'border-blue-500/50 bg-blue-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-bold text-sm text-blue-400">1. Greedy Heuristic</span>
+            {algorithm === 'greedy' && <span className="text-[10px] bg-blue-500/20 text-blue-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
+          </div>
+          <div className="flex flex-col gap-1.5 font-mono text-xs">
+            <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{greedySlots} slots</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-emerald-400 font-bold">O(V + E) [Instant]</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Local Best Selection</span></div>
           </div>
         </div>
-      )}
+
+        {/* Simulated Annealing Evaluation Card */}
+        <div className={`p-4 rounded-xl border ${algorithm === 'annealing' ? 'border-purple-500/50 bg-purple-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-bold text-sm text-purple-400">2. Simulated Annealing</span>
+            {algorithm === 'annealing' && <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
+          </div>
+          <div className="flex flex-col gap-1.5 font-mono text-xs">
+            <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{annealingSlots} slots</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-yellow-500 font-bold">Iterative (Stochastic)</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Probabilistic Escape</span></div>
+          </div>
+        </div>
+
+        {/* Tabu Search Evaluation Card */}
+        <div className={`p-4 rounded-xl border ${algorithm === 'tabu' ? 'border-pink-500/50 bg-pink-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-bold text-sm text-pink-400">3. Tabu Search</span>
+            {algorithm === 'tabu' && <span className="text-[10px] bg-pink-500/20 text-pink-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
+          </div>
+          <div className="flex flex-col gap-1.5 font-mono text-xs">
+            <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{tabuSlots} slots</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-yellow-500 font-bold">Iterative (Memory-Bound)</span></div>
+            <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Forbidden Move List</span></div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Legacy Global Comparison Strip nested cleanly inside */}
+      <div className="mt-6 pt-5 border-t border-slate-800/60 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-xs">
+        <div>
+          <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Chaos Collision Rate</div>
+          <div className="text-xl font-black text-red-500 font-mono">{collisionRate}%</div>
+        </div>
+        <div>
+          <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Network Packet Load</div>
+          <div className="text-xl font-black text-orange-400 font-mono">Chaos: {chaosPackets} <span className="text-slate-500 text-sm">vs</span> Opt: {optPackets}</div>
+        </div>
+        <div>
+          <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Current Energy Gap</div>
+          <div className="text-emerald-400 font-bold font-mono">+{batteryAdvantage}% Extended Battery</div>
+        </div>
+      </div>
     </div>
   );
-}
+})()}
