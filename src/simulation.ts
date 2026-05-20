@@ -1,70 +1,113 @@
-import type { IoTNode } from './types';
+import type { IoTNode } from './types'
 
-// 1. Generate Random Nodes
-export function generateNodes(count: number, canvasWidth: number, canvasHeight: number): IoTNode[] {
-  const nodes: IoTNode[] = [];
-  for (let i = 0; i < count; i++) {
-    nodes.push({
-      id: `Node_${i + 1}`,
-      x: Math.floor(Math.random() * (canvasWidth - 40)) + 20,
-      y: Math.floor(Math.random() * (canvasHeight - 40)) + 20,
-      battery: 10000,
-      color: -1,     // -1 means no time slot assigned yet
-      state: 'IDLE'
+// Helper to count active wireless collisions in a given schedule configuration
+function countCollisions(nodes: IoTNode[], adjList: Map<string, string[]>): number {
+  let collisions = 0;
+  nodes.forEach(node => {
+    const neighbors = adjList.get(node.id) || [];
+    neighbors.forEach(neighborId => {
+      const neighbor = nodes.find(n => n.id === neighborId);
+      // If neighbors share a time slot, it's an active link collision
+      if (neighbor && node.color === neighbor.color && node.color !== -1) {
+        collisions++;
+      }
     });
-  }
-  return nodes;
+  });
+  return collisions / 2; // Edges are bidirectional
 }
 
-// 2. Build the Interference Graph
-export function buildAdjacencyList(nodes: IoTNode[], interferenceRadius: number): Map<string, string[]> {
-  const adjList = new Map<string, string[]>();
+// 1. GREEDY APPROACH (Constructive baseline)
+export function assignTimeSlots(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
+  const result = nodes.map(n => ({ ...n, color: -1 }));
+  result.forEach(node => {
+    const neighbors = adjList.get(node.id) || [];
+    const usedColors = new Set<number>();
+    
+    neighbors.forEach(neighborId => {
+      const neighbor = result.find(n => n.id === neighborId);
+      if (neighbor && neighbor.color !== -1) {
+        usedColors.add(neighbor.color);
+      }
+    });
 
-  // Initialize an empty array for every node
-  nodes.forEach(n => adjList.set(n.id, []));
+    let color = 0;
+    while (usedColors.has(color)) {
+      color++;
+    }
+    node.color = color;
+  });
+  return result;
+}
 
-  // Compare every node against every other node
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const dx = nodes[i].x - nodes[j].x;
-      const dy = nodes[i].y - nodes[j].y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+// 2. SIMULATED ANNEALING APPROACH
+export function assignSlotsAnnealing(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
+  // Start with an initial state, then optimize it
+  let currentSchedule = assignTimeSlots(nodes, adjList);
+  let currentCost = countCollisions(currentSchedule, adjList);
+  
+  let temperature = 100.0;
+  const coolingRate = 0.95;
+  const maxSlots = Math.max(5, nodes.length);
 
-      // If they are within range, they interfere with each other
-      if (distance <= interferenceRadius) {
-        adjList.get(nodes[i].id)!.push(nodes[j].id);
-        adjList.get(nodes[j].id)!.push(nodes[i].id);
+  while (temperature > 0.1) {
+    const nextSchedule = currentSchedule.map(n => ({ ...n }));
+    // Tweak a random node's time slot window
+    const randomNode = nextSchedule[Math.floor(Math.random() * nextSchedule.length)];
+    randomNode.color = Math.floor(Math.random() * maxSlots);
+
+    const nextCost = countCollisions(nextSchedule, adjList);
+    const energyDelta = nextCost - currentCost;
+
+    // Thermodynamic decision check
+    if (energyDelta < 0 || Math.random() < Math.exp(-energyDelta / temperature)) {
+      currentSchedule = nextSchedule;
+      currentCost = nextCost;
+    }
+    temperature *= coolingRate;
+  }
+  return currentSchedule;
+}
+
+// 3. TABU SEARCH APPROACH
+export function assignSlotsTabu(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
+  let bestSchedule = assignTimeSlots(nodes, adjList);
+  let currentSchedule = bestSchedule.map(n => ({ ...n }));
+  
+  // Short-term memory map tracking: NodeID -> Forbidden until Iteration X
+  const tabuList = new Map<string, number>(); 
+  const maxIterations = 50;
+  const tabuTenure = 5;
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    let bestMoveSchedule: IoTNode[] | null = null;
+    let bestMoveCost = Infinity;
+    let chosenNodeId = '';
+
+    // Evaluate neighborhood slot modifications
+    currentSchedule.forEach(node => {
+      if (tabuList.has(node.id) && (tabuList.get(node.id) || 0) > iter) return; // Skip tabu routes
+
+      for (let slot = 0; slot < 6; slot++) {
+        if (slot === node.color) continue;
+        const candidate = currentSchedule.map(n => n.id === node.id ? { ...n, color: slot } : { ...n });
+        const cost = countCollisions(candidate, adjList);
+
+        if (cost < bestMoveCost) {
+          bestMoveCost = cost;
+          bestMoveSchedule = candidate;
+          chosenNodeId = node.id;
+        }
+      }
+    });
+
+    if (bestMoveSchedule) {
+      currentSchedule = bestMoveSchedule;
+      tabuList.set(chosenNodeId, iter + tabuTenure); // Apply temporary Tabu restriction
+
+      if (countCollisions(currentSchedule, adjList) < countCollisions(bestSchedule, adjList)) {
+        bestSchedule = currentSchedule;
       }
     }
   }
-  return adjList;
-}
-
-// 3. The Graph Coloring Algorithm (Time Slot Assignment)
-export function assignTimeSlots(nodes: IoTNode[], adjList: Map<string, string[]>): IoTNode[] {
-  // Create a copy so we don't mutate state directly (React best practice)
-  const updatedNodes = nodes.map(n => ({ ...n }));
-
-  // Map to keep track of slots assigned so far: { Node_1: 0, Node_2: 1 }
-  const assignedSlots = new Map<string, number>();
-
-  updatedNodes.forEach(node => {
-    // Get the slots already taken by this node's interfering neighbors
-    const neighbors = adjList.get(node.id) || [];
-    const takenSlots = new Set(
-      neighbors.map(n => assignedSlots.get(n)).filter((slot): slot is number => slot !== undefined)
-    );
-
-    // Find the lowest available integer starting from 0
-    let currentSlot = 0;
-    while (takenSlots.has(currentSlot)) {
-      currentSlot++;
-    }
-
-    // Assign the slot to the node
-    assignedSlots.set(node.id, currentSlot);
-    node.color = currentSlot;
-  });
-
-  return updatedNodes;
+  return bestSchedule;
 }
