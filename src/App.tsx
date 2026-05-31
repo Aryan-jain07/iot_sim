@@ -728,14 +728,14 @@ export default function App() {
             <label className="text-slate-400">IoT Nodes</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{nodeCount}</span>
           </div>
-          <input type="range" min="5" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
+          <input type="range" min="5" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
         <div className="flex flex-col gap-3 col-span-1 md:col-span-3">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">Edge density</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{edgeDensity}</span>
           </div>
-          <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
+          <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
         <div className="flex flex-col gap-3 col-span-1 md:col-span-2">
           <div className="flex justify-between items-center text-sm">

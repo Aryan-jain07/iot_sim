@@ -69,9 +69,8 @@ export function greedyColoring(nodes: IoTNode[], adjList: Map<string, string[]>)
 }
 
 // Helper to count conflicts
-function countConflicts(nodes: IoTNode[], adjList: Map<string, string[]>): number {
+function countConflicts(nodes: IoTNode[], adjList: Map<string, string[]>, nodeMap: Map<string, IoTNode>): number {
   let conflicts = 0;
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
   nodes.forEach(node => {
     const neighbors = adjList.get(node.id) || [];
     neighbors.forEach(nId => {
@@ -96,19 +95,19 @@ export function tabuSearchColoring(nodes: IoTNode[], adjList: Map<string, string
 
   while (currentTargetColors > 0) {
     let currentSolution = nodes.map(n => ({ ...n, color: Math.floor(Math.random() * currentTargetColors) }));
+    let nodeMap = new Map(currentSolution.map(n => [n.id, n]));
     let tabuList = new Map<string, number>();
     const tabuTenure = 5;
     let foundValid = false;
 
     for (let iter = 0; iter < maxIterations; iter++) {
-      if (countConflicts(currentSolution, adjList) === 0) {
+      if (countConflicts(currentSolution, adjList, nodeMap) === 0) {
         foundValid = true;
         break;
       }
 
       let worstNodeId = '';
       let maxNodeConflicts = -1;
-      const nodeMap = new Map(currentSolution.map(n => [n.id, n]));
       
       currentSolution.forEach(node => {
         let localConflicts = 0;
@@ -126,7 +125,7 @@ export function tabuSearchColoring(nodes: IoTNode[], adjList: Map<string, string
         break;
       }
 
-      const worstNode = currentSolution.find(n => n.id === worstNodeId)!;
+      const worstNode = nodeMap.get(worstNodeId)!;
       let bestMoveColor = worstNode.color;
       let minMoveConflicts = Infinity;
 
@@ -175,7 +174,8 @@ export function simulatedAnnealingColoring(nodes: IoTNode[], adjList: Map<string
 
   while (currentTargetColors > 0) {
     let currentSolution = nodes.map(n => ({ ...n, color: Math.floor(Math.random() * currentTargetColors) }));
-    let currentEnergy = countConflicts(currentSolution, adjList);
+    let nodeMap = new Map(currentSolution.map(n => [n.id, n]));
+    let currentEnergy = countConflicts(currentSolution, adjList, nodeMap);
     let initialTemp = 10.0;
     let coolingRate = 0.95;
     let temp = initialTemp;
@@ -190,11 +190,15 @@ export function simulatedAnnealingColoring(nodes: IoTNode[], adjList: Map<string
       const randomIdx = Math.floor(Math.random() * currentSolution.length);
       const node = currentSolution[randomIdx];
       const oldColor = node.color;
-      let newColor = Math.floor(Math.random() * currentTargetColors);
-      while(newColor === oldColor) newColor = Math.floor(Math.random() * currentTargetColors);
+      let newColor = oldColor;
+      if (currentTargetColors > 1) {
+        while(newColor === oldColor) {
+          newColor = Math.floor(Math.random() * currentTargetColors);
+        }
+      }
 
       node.color = newColor;
-      const newEnergy = countConflicts(currentSolution, adjList);
+      const newEnergy = countConflicts(currentSolution, adjList, nodeMap);
       
       const deltaE = newEnergy - currentEnergy;
       
