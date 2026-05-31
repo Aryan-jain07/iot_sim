@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { IoTNode, NodeState, Approach, LogEntry, AlgorithmMetrics } from './types';
 import { generateNodes, buildAdjacencyList, greedyColoring, tabuSearchColoring, simulatedAnnealingColoring, runFastForwardAnalytics } from './simulation';
 import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ComposedChart, Cell } from 'recharts';
 
 const CANVAS_WIDTH = 550;
 const CANVAS_HEIGHT = 400;
@@ -392,23 +391,6 @@ function AlgorithmInfoModal({ algo, onClose }: { algo: Approach, onClose: () => 
 function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
   if (!data || data.length === 0) return null;
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-[#0f172a] border border-[#1e293b] p-3 rounded shadow-xl text-xs text-white">
-          <p className="font-bold mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: entry.color }} />
-              <span className="text-slate-300">{entry.name}:</span>
-              <span className="font-bold">{entry.value}</span>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
 
   const schemeColors: Record<string, string> = {
     'No Coloring': '#ef4444',
@@ -427,63 +409,7 @@ function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
 
   return (
     <div className="mt-8 flex flex-col gap-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Colors vs Time */}
-        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-cyan-900/5">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-            <Activity size={16} className="text-cyan-400" /> Optimisation: Colors vs Time
-          </h3>
-          <div style={{ width: '100%', height: 300 }}>
-              <ComposedChart width={500} height={300} data={optimizationData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis yAxisId="left" stroke="#06b6d4" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#ec4899" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                <Bar yAxisId="left" dataKey="slots" name="Colors used" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                <Bar yAxisId="right" dataKey="timeMs" name="Time (ms)" fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </ComposedChart>
-          </div>
-        </div>
 
-        {/* Delay & Energy */}
-        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-purple-900/5">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-            <Activity size={16} className="text-purple-400" /> IoT Performance: Delay & Energy
-          </h3>
-          <div style={{ width: '100%', height: 300 }}>
-              <BarChart width={500} height={300} data={formattedData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="avgDelay" name="Avg delay (ms)" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                <Bar dataKey="energy" name="Energy units" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </BarChart>
-          </div>
-        </div>
-      </div>
-
-      {/* Success Rate & Throughput */}
-      <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-cyan-900/5">
-        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-          <Activity size={16} className="text-cyan-400" /> Efficiency: Success Rate & Throughput
-        </h3>
-        <div style={{ width: '100%', height: 300 }}>
-            <LineChart width={1000} height={300} data={formattedData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <YAxis yAxisId="left" stroke="#06b6d4" domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" stroke="#ec4899" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Line yAxisId="left" type="monotone" dataKey="successRate" name="Success %" stroke="#06b6d4" strokeWidth={3} dot={{ r: 5, fill: '#06b6d4', stroke: '#0B1020', strokeWidth: 2 }} activeDot={{ r: 7 }} />
-              <Line yAxisId="right" type="monotone" dataKey="throughput" name="Throughput (msg/ms)" stroke="#ec4899" strokeWidth={3} dot={{ r: 5, fill: '#ec4899', stroke: '#0B1020', strokeWidth: 2 }} activeDot={{ r: 7 }} />
-            </LineChart>
-        </div>
-      </div>
 
       {/* Scheme Comparison Table */}
       <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-purple-900/5">
