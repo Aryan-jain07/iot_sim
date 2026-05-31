@@ -530,7 +530,7 @@ export default function App() {
   const [cyberpunkMode, setCyberpunkMode] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<AlgorithmMetrics[]>([]);
   const clickCountRef = useRef(0);
-  const clickTimeoutRef = useRef<NodeJS.Timeout>();
+  const clickTimeoutRef = useRef<number | undefined>(undefined);
 
   const handleTitleClick = () => {
     clickCountRef.current += 1;
@@ -539,7 +539,7 @@ export default function App() {
       clickCountRef.current = 0;
     }
     clearTimeout(clickTimeoutRef.current);
-    clickTimeoutRef.current = setTimeout(() => {
+    clickTimeoutRef.current = window.setTimeout(() => {
       clickCountRef.current = 0;
     }, 1000);
   };
@@ -709,7 +709,7 @@ export default function App() {
   };
 
   const useSimulationLoop = (
-    running: boolean, approach: Approach, nodes: IoTNode[], setNodes: React.Dispatch<React.SetStateAction<IoTNode[]>>,
+    running: boolean, approach: Approach, setNodes: React.Dispatch<React.SetStateAction<IoTNode[]>>,
     adjList: Map<string, string[]>, setCollisions: React.Dispatch<React.SetStateAction<number>>,
     setPackets: React.Dispatch<React.SetStateAction<number>>, maxSlot: number, slotRef: React.MutableRefObject<number>,
     panelId: 'A' | 'B'
@@ -775,8 +775,8 @@ export default function App() {
     }, [running, approach, adjList, maxSlot, panelId]);
   };
 
-  useSimulationLoop(runningA, approachA, nodesA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A');
-  useSimulationLoop(runningB, approachB, nodesB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B');
+  useSimulationLoop(runningA, approachA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A');
+  useSimulationLoop(runningB, approachB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B');
 
   const batteryA = nodesA.length > 0 ? (nodesA.reduce((s, n) => s + n.battery, 0) / nodesA.length / MAX_BATTERY) * 100 : 0;
   const batteryB = nodesB.length > 0 ? (nodesB.reduce((s, n) => s + n.battery, 0) / nodesB.length / MAX_BATTERY) * 100 : 0;
