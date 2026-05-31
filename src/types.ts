@@ -10,3 +10,24 @@ export interface IoTNode {
     color: number;     // Assigned Time Slot (-1 means unassigned)
     state: NodeState;  // Current action in the simulation loop
 }
+
+export type Approach = 'chaos' | 'greedy' | 'tabu' | 'sa';
+
+export interface LogEntry {
+    id: string;
+    timestamp: Date;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+    panel?: 'A' | 'B';
+}
+
+export interface AlgorithmMetrics {
+    scheme: Approach;
+    slots: number;
+    collisions: number;
+    successRate: number; 
+    avgDelay: number;    
+    energy: number;      
+    throughput: number;  
+    timeMs: number;      
+}

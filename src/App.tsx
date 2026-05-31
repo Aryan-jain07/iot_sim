@@ -1,350 +1,676 @@
-import { useState, useEffect, useRef } from 'react'
-import type { IoTNode } from './types'
-import { 
-  generateNodes, 
-  buildAdjacencyList, 
-  assignTimeSlots, 
-  assignSlotsAnnealing, 
-  assignSlotsTabu 
-} from './simulation'
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { IoTNode, NodeState, Approach, LogEntry, AlgorithmMetrics } from './types';
+import { generateNodes, buildAdjacencyList, greedyColoring, tabuSearchColoring, simulatedAnnealingColoring, runFastForwardAnalytics } from './simulation';
+import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ComposedChart, Cell } from 'recharts';
 
-const CANVAS_WIDTH = 700;
-const CANVAS_HEIGHT = 420;
-const INTERFERENCE_RADIUS = 150;
+const CANVAS_WIDTH = 550;
+const CANVAS_HEIGHT = 400;
 const MAX_BATTERY = 10000;
 
-// ─── Shared Theme Helpers ────────────────────────────────────────────────────
-const getTheme = (isDark: boolean) => ({
-  bg: isDark ? 'bg-[#0B1020]' : 'bg-slate-50',
-  card: isDark ? 'bg-[#151B2E] border-[#1e2746]' : 'bg-white border-slate-200',
-  text: isDark ? 'text-slate-200' : 'text-slate-800',
-  textMuted: isDark ? 'text-slate-400' : 'text-slate-500',
-  gridBg: isDark ? 'bg-[#0B1020] border-[#1e2746]' : 'bg-slate-50 border-orange-100',
-  edgeLine: isDark ? '#475569' : '#94a3b8', 
-});
+const SLOT_COLORS = [
+  '#06b6d4', '#a855f7', '#ec4899', '#3b82f6', '#f97316', '#10b981', '#eab308',
+];
 
-// ─── Chaos Simulation Panel ──────────────────────────────────────────────────
-function ChaosPanel({
-  nodes, adjList, isRunning, collisions, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark, nodeRadius
-}: {
-  nodes: IoTNode[]; adjList: Map<string, string[]>;
-  isRunning: boolean; collisions: number; packets: number; batteryPercent: number;
-  onStart: () => void; onStop: () => void;
-  canEdit: boolean; selectedNode: string | null; 
-  onNodeRightClick: (id: string) => void;
-  onNodeLeftClick: (id: string) => void;
-  isDark: boolean; nodeRadius: number;
-}) {
-  const theme = getTheme(isDark);
-  const textSize = Math.max(9, nodeRadius * 0.75);
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-orange-500">⚡ Chaos Mode</h2>
-          <p className={`text-xs ${theme.textMuted}`}>Unoptimized random access</p>
-        </div>
-        {!isRunning
-          ? <button onClick={onStart} disabled={nodes.length === 0 || canEdit}
-              className="bg-orange-600 text-white text-sm px-4 py-1.5 rounded-lg hover:bg-orange-500 transition disabled:opacity-40 font-bold shadow-lg shadow-orange-900/20">
-              ▶ Run
-            </button>
-          : <button onClick={onStop}
-              className={`${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'} text-sm px-4 py-1.5 rounded-lg hover:bg-slate-700 transition font-bold`}>
-              ⏹ Stop
-            </button>
-        }
-      </div>
-
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
-          {nodes.map(node =>
-            (adjList.get(node.id) || []).map(neighborId => {
-              const neighbor = nodes.find(n => n.id === neighborId);
-              if (neighbor && node.id < neighbor.id) {
-                return <line key={`${node.id}-${neighborId}`}
-                  x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="2.5" strokeDasharray="6 4" className="transition-colors duration-500" />;
-              }
-              return null;
-            })
-          )}
-          {nodes.map(node => {
-            const pct = node.battery / MAX_BATTERY;
-            const isSelected = selectedNode === node.id;
-            
-            let nodeColor = isDark ? 'fill-slate-600' : 'fill-slate-300';
-            if (node.state === 'COLLISION') nodeColor = 'fill-red-500';
-            if (node.state === 'TRANSMIT') nodeColor = 'fill-yellow-400';
-
-            return (
-              <g key={node.id} 
-                 onClick={() => onNodeLeftClick(node.id)}
-                 onContextMenu={(e) => { e.preventDefault(); if (canEdit) onNodeRightClick(node.id); }}
-                 className="cursor-pointer">
-                
-                {isRunning && node.state === 'TRANSMIT' &&
-                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
-                {isRunning && node.state === 'COLLISION' &&
-                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-red-500/40 animate-ping opacity-75 pointer-events-none" />}
-
-                <circle cx={node.x} cy={node.y} r={nodeRadius}
-                  className={`transition-all duration-200 ${nodeColor}
-                    ${isSelected ? 'stroke-cyan-400 stroke-[3px]' : isDark ? 'stroke-[#0B1020] stroke-[2px]' : 'stroke-white stroke-[2px]'}
-                    ${canEdit && !isSelected ? 'hover:stroke-cyan-400 hover:stroke-[3px]' : ''}`} />
-                
-                <text x={node.x} y={node.y - nodeRadius - (textSize/2)} fontSize={textSize} textAnchor="middle" 
-                  className={`${isDark ? 'fill-slate-300' : 'fill-slate-600'} font-bold pointer-events-none drop-shadow-md`}>
-                  {node.id.replace('Node_', '')}
-                </text>
-                
-                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={nodeRadius * 2} height="4" 
-                  className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="2" />
-                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={(nodeRadius * 2) * Math.max(0, pct)} height="4"
-                  className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none`}
-                  rx="2" style={{ transition: 'width 0.3s ease' }} />
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 text-center text-sm">
-        <div className={`${isDark ? 'bg-[#1e293b] border-[#334155]' : 'bg-orange-50 border-orange-100'} rounded-lg p-2 border transition-colors duration-500`}>
-          <div className="font-bold text-orange-500">{packets}</div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Packets</div>
-        </div>
-        <div className={`${isDark ? 'bg-red-900/20 border-red-900/50' : 'bg-red-50 border-red-100'} rounded-lg p-2 border transition-colors duration-500`}>
-          <div className="font-bold text-red-500">{collisions}</div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Collisions</div>
-        </div>
-        <div className={`rounded-lg p-2 border transition-colors duration-500 ${batteryPercent > 50 ? (isDark ? 'bg-green-900/20 border-green-900/50' : 'bg-green-50 border-green-100') : batteryPercent > 20 ? (isDark ? 'bg-yellow-900/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-100') : (isDark ? 'bg-red-900/20 border-red-900/50' : 'bg-red-50 border-red-100')}`}>
-          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-600' : batteryPercent > 20 ? 'text-yellow-600' : 'text-red-600'}`}>
-            {Math.round(batteryPercent)}%
-          </div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Battery</div>
-        </div>
-      </div>
-    </div>
-  );
+function getApproachName(app: Approach) {
+  switch(app) {
+    case 'chaos': return 'Random Access (Chaos)';
+    case 'greedy': return 'Greedy Coloring';
+    case 'tabu': return 'Tabu Search';
+    case 'sa': return 'Simulated Annealing';
+    default: return 'Unknown';
+  }
 }
 
-// ─── Optimized Simulation Panel ───────────────────────────────────────────────
-function OptimizedPanel({
-  nodes, adjList, isRunning, packets, batteryPercent,
-  onStart, onStop, canEdit, selectedNode, onNodeRightClick, onNodeLeftClick, isDark, nodeRadius
-}: {
+const applyColoring = (nodes: IoTNode[], adj: Map<string, string[]>, algo: Approach) => {
+  if (algo === 'chaos') return nodes.map(n => ({ ...n, color: -1 }));
+  switch (algo) {
+    case 'tabu': return tabuSearchColoring(nodes, adj);
+    case 'sa': return simulatedAnnealingColoring(nodes, adj);
+    case 'greedy': default: return greedyColoring(nodes, adj);
+  }
+};
+
+
+interface SimulationCanvasProps {
   nodes: IoTNode[]; adjList: Map<string, string[]>;
-  isRunning: boolean; packets: number; batteryPercent: number;
-  onStart: () => void; onStop: () => void;
-  canEdit: boolean; selectedNode: string | null; 
-  onNodeRightClick: (id: string) => void;
-  onNodeLeftClick: (id: string) => void;
-  isDark: boolean; nodeRadius: number;
-}) {
-  const theme = getTheme(isDark);
-  const textSize = Math.max(9, nodeRadius * 0.75);
-  const slotIndicatorColors = ['fill-cyan-400','fill-purple-500','fill-pink-500','fill-blue-500','fill-orange-500','fill-teal-400'];
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-cyan-400">🎯 Graph Coloring</h2>
-          <p className={`text-xs ${theme.textMuted}`}>Zero-collision scheduling</p>
-        </div>
-        {!isRunning
-          ? <button onClick={onStart} disabled={nodes.length === 0 || canEdit}
-              className="bg-cyan-600 text-white text-sm px-4 py-1.5 rounded-lg hover:bg-cyan-500 transition disabled:opacity-40 font-bold shadow-lg shadow-cyan-900/20">
-              ▶ Run
-            </button>
-          : <button onClick={onStop}
-              className={`${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'} text-sm px-4 py-1.5 rounded-lg hover:bg-slate-700 transition font-bold`}>
-              ⏹ Stop
-            </button>
-        }
-      </div>
-
-      <div className={`${theme.gridBg} rounded-xl overflow-hidden shadow-inner transition-colors duration-500 w-full`}>
-        <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full h-auto block">
-          {nodes.map(node =>
-            (adjList.get(node.id) || []).map(neighborId => {
-              const neighbor = nodes.find(n => n.id === neighborId);
-              if (neighbor && node.id < neighbor.id) {
-                return <line key={`${node.id}-${neighborId}`}
-                  x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
-                  stroke={theme.edgeLine} strokeWidth="2.5" strokeDasharray="6 4" className="transition-colors duration-500" />;
-              }
-              return null;
-            })
-          )}
-          {nodes.map(node => {
-            const pct = node.battery / MAX_BATTERY;
-            const isSelected = selectedNode === node.id;
-            const isAssigned = node.color >= 0;
-            
-            let nodeColor = isDark ? 'fill-slate-600' : 'fill-slate-300';
-            if (isAssigned) nodeColor = 'fill-emerald-500'; 
-            if (node.state === 'TRANSMIT') nodeColor = 'fill-yellow-400'; 
-
-            const assignedIndicator = isAssigned ? slotIndicatorColors[node.color % slotIndicatorColors.length] : 'fill-transparent';
-            const dotSize = Math.max(3, nodeRadius * 0.3);
-            
-            return (
-              <g key={node.id}
-                 onClick={() => onNodeLeftClick(node.id)}
-                 onContextMenu={(e) => { e.preventDefault(); if (canEdit) onNodeRightClick(node.id); }}
-                 className="cursor-pointer">
-                {isRunning && node.state === 'TRANSMIT' &&
-                  <circle cx={node.x} cy={node.y} r={nodeRadius * 2.2} className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
-
-                <circle cx={node.x} cy={node.y} r={nodeRadius}
-                  className={`transition-all duration-200 ${nodeColor}
-                    ${isSelected ? 'stroke-cyan-400 stroke-[3px]' : isDark ? 'stroke-[#0B1020] stroke-[2px]' : 'stroke-white stroke-[2px]'}
-                    ${canEdit && !isSelected ? 'hover:stroke-cyan-400 hover:stroke-[3px]' : ''}`} />
-                
-                {isAssigned &&
-                  <circle cx={node.x + (nodeRadius * 0.7)} cy={node.y - (nodeRadius * 0.7)} r={dotSize} 
-                    className={`${assignedIndicator} pointer-events-none stroke-[#0B1020] stroke-[1.5px]`} />}
-                
-                <text x={node.x} y={node.y - nodeRadius - (textSize/2)} fontSize={textSize} textAnchor="middle" 
-                  className={`${isDark ? 'fill-slate-300' : 'fill-slate-600'} font-bold pointer-events-none drop-shadow-md`}>
-                  {node.id.replace('Node_', '')}
-                </text>
-                
-                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={nodeRadius * 2} height="4" 
-                  className={`${isDark ? 'fill-slate-800' : 'fill-slate-200'} pointer-events-none`} rx="2" />
-                <rect x={node.x - nodeRadius} y={node.y + nodeRadius + 3} width={(nodeRadius * 2) * Math.max(0, pct)} height="4"
-                  className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none`}
-                  rx="2" style={{ transition: 'width 0.3s ease' }} />
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 text-center text-sm">
-        <div className={`${isDark ? 'bg-cyan-900/20 border-cyan-900/50' : 'bg-blue-50 border-blue-100'} rounded-lg p-2 border transition-colors duration-500`}>
-          <div className="font-bold text-cyan-500">{packets}</div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Packets</div>
-        </div>
-        <div className={`${isDark ? 'bg-green-900/20 border-green-900/50' : 'bg-green-50 border-green-100'} rounded-lg p-2 border transition-colors duration-500`}>
-          <div className="font-bold text-green-500">0</div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Collisions</div>
-        </div>
-        <div className={`rounded-lg p-2 border transition-colors duration-500 ${batteryPercent > 50 ? (isDark ? 'bg-green-900/20 border-green-900/50' : 'bg-green-50 border-green-100') : batteryPercent > 20 ? (isDark ? 'bg-yellow-900/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-100') : (isDark ? 'bg-red-900/20 border-red-900/50' : 'bg-red-50 border-red-100')}`}>
-          <div className={`font-bold ${batteryPercent > 50 ? 'text-green-600' : batteryPercent > 20 ? 'text-yellow-500' : 'text-red-500'}`}>
-            {Math.round(batteryPercent)}%
-          </div>
-          <div className={`text-[10px] uppercase tracking-wide font-bold ${theme.textMuted}`}>Battery</div>
-        </div>
-      </div>
-    </div>
-  );
+  onNodeMove: (id: string, dx: number, dy: number) => void;
+  onNodeMoveEnd: () => void;
+  approach: Approach;
+  isRunning: boolean;
+  editMode?: boolean;
+  selectedNode?: string | null;
+  onNodeRightClick?: (id: string) => void;
+  cyberpunkMode?: boolean;
 }
 
-// ─── Root App ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const [isDark, setIsDark] = useState(true);
-  const theme = getTheme(isDark);
+function SimulationCanvas({ 
+  nodes, adjList, onNodeMove, onNodeMoveEnd, approach, isRunning, editMode, selectedNode, onNodeRightClick, cyberpunkMode 
+}: SimulationCanvasProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const isChaos = approach === 'chaos';
 
-  const [nodeCount, setNodeCount] = useState(12);
-  const [algorithm, setAlgorithm] = useState<'greedy' | 'annealing' | 'tabu'>('greedy');
-  const [editMode, setEditMode] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [inspectedNodeId, setInspectedNodeId] = useState<string | null>(null);
-
-  const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
-  const [generated, setGenerated] = useState(false);
-
-  const [chaosNodes, setChaosNodes] = useState<IoTNode[]>([]);
-  const [chaosRunning, setChaosRunning] = useState(false);
-  const [chaosCollisions, setChaosCollisions] = useState(0);
-  const [chaosPackets, setChaosPackets] = useState(0);
-
-  const [optNodes, setOptNodes] = useState<IoTNode[]>([]);
-  const [optRunning, setOptRunning] = useState(false);
-  const [_optCurrentSlot, setOptCurrentSlot] = useState(0);
-  const [optMaxSlot, setOptMaxSlot] = useState(0);
-  const [optPackets, setOptPackets] = useState(0);
-  const optSlotRef = useRef(0); 
-
-  const eitherRunning = chaosRunning || optRunning;
-  const canEdit = editMode && !eitherRunning;
-
-  const calculateRadius = (count: number) => Math.max(6, Math.min(22, 28 - (count * 0.4)));
-  const nodeRadius = calculateRadius(optNodes.length > 0 ? optNodes.length : nodeCount);
-
-  const handleRunBoth = () => { 
-    setChaosRunning(true); 
-    setOptRunning(true); 
-    setEditMode(false); 
-    setSelectedNode(null); 
-    setInspectedNodeId(null); 
+  const handlePointerDown = (e: React.PointerEvent, id: string) => {
+    if (isRunning) return;
+    setDraggingId(id);
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.stopPropagation();
   };
 
-  const handleStopBoth = () => { 
-    setChaosRunning(false); 
-    setOptRunning(false); 
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!draggingId || !svgRef.current) return;
+    const pt = svgRef.current.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()!.inverse());
+    onNodeMove(draggingId, svgP.x, svgP.y);
   };
 
-  const computeSchedule = (baseNodes: IoTNode[], targetAdj: Map<string, string[]>) => {
-    if (algorithm === 'annealing') {
-      return assignSlotsAnnealing(baseNodes, targetAdj);
-    } else if (algorithm === 'tabu') {
-      return assignSlotsTabu(baseNodes, targetAdj);
-    } else {
-      return assignTimeSlots(baseNodes, targetAdj);
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (draggingId) {
+      setDraggingId(null);
+      (e.target as Element).releasePointerCapture(e.pointerId);
+      onNodeMoveEnd();
     }
   };
 
-  const handleGenerate = () => {
-    const safeCount = Math.min(Math.max(nodeCount, 2), 50);
-    const base = generateNodes(safeCount, CANVAS_WIDTH, CANVAS_HEIGHT);
-    const adj = buildAdjacencyList(base, INTERFERENCE_RADIUS);
-    const optimized = computeSchedule(base.map(n => ({ ...n })), adj);
-    
-    setAdjList(adj);
-    setChaosNodes(base.map(n => ({ ...n, state: 'IDLE' as const })));
-    setOptNodes(optimized);
-    setOptMaxSlot(optimized.length > 0 ? Math.max(...optimized.map(n => n.color)) : 0);
-    
-    resetSimulations();
-    setGenerated(true);
-    setInspectedNodeId(null);
-  };
+  const nodeMap = React.useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
 
-  const handleClearEdges = () => {
-    if (!generated) return;
-    const nextAdj = new Map<string, string[]>();
-    chaosNodes.forEach(n => nextAdj.set(n.id, []));
-    setAdjList(nextAdj);
-    reassignColors(nextAdj);
-    setSelectedNode(null);
-  };
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+      className={`w-full h-auto bg-[#050b14] rounded-lg border border-[#1e293b] transition-colors ${editMode ? 'shadow-[inset_0_0_20px_rgba(168,85,247,0.15)]' : ''}`}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {nodes.map(node =>
+        (adjList.get(node.id) || []).map(neighborId => {
+          const neighbor = nodeMap.get(neighborId);
+          if (neighbor && node.id < neighborId) {
+            return (
+              <line
+                key={`${node.id}-${neighborId}`}
+                x1={node.x} y1={node.y} x2={neighbor.x} y2={neighbor.y}
+                stroke={cyberpunkMode ? "#ec4899" : (editMode ? "#64748b" : "#334155")}
+                strokeWidth={cyberpunkMode ? "2" : "1.5"}
+                strokeDasharray={cyberpunkMode ? "0" : "4 4"}
+                className="transition-colors duration-300"
+                style={cyberpunkMode ? { filter: 'drop-shadow(0 0 5px #ec4899)' } : {}}
+              />
+            );
+          }
+          return null;
+        })
+      )}
 
-  const resetSimulations = () => {
-    setChaosRunning(false);
-    setOptRunning(false);
-    setChaosCollisions(0);
-    setChaosPackets(0);
-    setOptPackets(0);
-    setOptCurrentSlot(0);
-    optSlotRef.current = 0;
+      {isRunning && nodes.map(node => {
+        if (node.state !== 'TRANSMIT' && node.state !== 'COLLISION') return null;
+        const isCollision = node.state === 'COLLISION';
+        const packetColor = isCollision ? '#ef4444' : '#facc15';
+
+        return (adjList.get(node.id) || []).map(neighborId => {
+          const target = nodeMap.get(neighborId);
+          if (!target) return null;
+          const uniqueKey = `packet-${node.id}-${neighborId}-${Date.now()}`;
+          return (
+            <circle key={uniqueKey} r={isCollision ? "4" : "3"} fill={packetColor} className="pointer-events-none" style={{ filter: `drop-shadow(0 0 5px ${packetColor})` }}>
+              <animate attributeName="cx" values={`${node.x};${target.x}`} dur="0.6s" fill="freeze" />
+              <animate attributeName="cy" values={`${node.y};${target.y}`} dur="0.6s" fill="freeze" />
+              <animate attributeName="opacity" values="1;0" dur="0.6s" fill="freeze" />
+            </circle>
+          );
+        });
+      })}
+
+      {nodes.map(node => {
+        const isAssigned = node.color >= 0;
+        const strokeColor = isChaos ? '#ef4444' : (isAssigned ? SLOT_COLORS[node.color % SLOT_COLORS.length] : '#64748b');
+        const pct = node.battery / MAX_BATTERY;
+        const isSelected = selectedNode === node.id;
+        
+        return (
+          <g key={node.id} 
+             onPointerDown={(e) => {
+               if (e.button !== 2) handlePointerDown(e, node.id);
+             }} 
+             onContextMenu={(e) => { 
+               e.preventDefault(); 
+               if (onNodeRightClick) onNodeRightClick(node.id); 
+             }}
+             className={isRunning ? '' : 'cursor-pointer'} 
+             style={{ touchAction: 'none' }}>
+            
+            {isRunning && node.state === 'TRANSMIT' &&
+              <circle cx={node.x} cy={node.y} r="18" className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
+            {isRunning && node.state === 'COLLISION' &&
+              <circle cx={node.x} cy={node.y} r="18" className="fill-red-500/40 animate-ping opacity-75 pointer-events-none" />}
+
+            {isSelected && (
+              <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />
+            )}
+
+            <circle cx={node.x} cy={node.y} r="9" fill="#050b14" stroke={node.state === 'TRANSMIT' ? '#facc15' : strokeColor} strokeWidth={isSelected ? "3" : "2.5"} className={`transition-colors duration-200 ${editMode && !isSelected ? 'hover:stroke-purple-400' : ''}`} style={cyberpunkMode ? { filter: `drop-shadow(0 0 8px ${node.state === 'TRANSMIT' ? '#facc15' : strokeColor})` } : {}} />
+            <circle cx={node.x} cy={node.y} r="3" fill={node.state === 'TRANSMIT' ? '#facc15' : strokeColor} className="transition-colors duration-200" style={{ filter: `drop-shadow(0 0 4px ${node.state === 'TRANSMIT' ? '#facc15' : strokeColor})` }} />
+            
+            <rect x={node.x - 10} y={node.y + 14} width="20" height="3" className="fill-[#1e293b] pointer-events-none" rx="1.5" />
+            <rect x={node.x - 10} y={node.y + 14} width={20 * Math.max(0, pct)} height="3" className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none transition-all duration-300`} rx="1.5" />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function NetworkPanelBase({
+  title, subtitle, nodes, adjList, isRunning, packets, collisions, batteryPercent,
+  onStart, onStop, onNodeMove, onNodeMoveEnd, onNodeRightClick, selectedNode, editMode, approach, showControls = true, cyberpunkMode
+}: {
+  title: string; subtitle: string;
+  nodes: IoTNode[]; adjList: Map<string, string[]>;
+  isRunning: boolean; packets: number; collisions: number; batteryPercent: number;
+  onStart: () => void; onStop: () => void;
+  onNodeMove: (id: string, dx: number, dy: number) => void;
+  onNodeMoveEnd: () => void;
+  onNodeRightClick?: (id: string) => void;
+  selectedNode?: string | null;
+  editMode?: boolean;
+  approach: Approach;
+  showControls?: boolean;
+  cyberpunkMode?: boolean;
+}) {
+  const isChaos = approach === 'chaos';
+
+  return (
+    <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden flex flex-col h-full">
+      <div className="flex justify-between items-center p-4 border-b border-[#1e293b]">
+        <div>
+          <h3 className={`font-semibold flex items-center gap-2 ${isChaos ? 'text-red-400' : 'text-cyan-400'}`}>
+            {title}
+            {editMode && <span className="text-[10px] bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/50 tracking-wider">EDIT MODE</span>}
+          </h3>
+          <p className="text-xs text-slate-400">{subtitle}</p>
+        </div>
+        {showControls && (
+          !isRunning ? (
+            <button onClick={onStart} disabled={nodes.length === 0 || editMode}
+              className={`text-sm px-4 py-1.5 rounded-lg font-bold transition disabled:opacity-40
+                ${isChaos ? 'bg-red-950 text-red-400 hover:bg-red-900 border border-red-800/50' 
+                          : 'bg-cyan-950 text-cyan-400 hover:bg-cyan-900 border border-cyan-800/50'}`}>
+              ▶ Run
+            </button>
+          ) : (
+            <button onClick={onStop}
+              className="bg-[#1e293b] text-slate-300 text-sm px-4 py-1.5 rounded-lg hover:bg-slate-700 transition font-bold border border-[#334155]">
+              ⏹ Stop
+            </button>
+          )
+        )}
+      </div>
+
+      <div className="p-4 flex-1">
+        <SimulationCanvas
+          nodes={nodes}
+          adjList={adjList}
+          onNodeMove={onNodeMove}
+          onNodeMoveEnd={onNodeMoveEnd}
+          approach={approach}
+          isRunning={isRunning}
+          editMode={editMode}
+          selectedNode={selectedNode}
+          onNodeRightClick={onNodeRightClick}
+          cyberpunkMode={cyberpunkMode}
+        />
+
+        <div className="grid grid-cols-3 gap-3 mt-4 text-center">
+          <div className="bg-[#050b14] border border-[#1e293b] rounded-lg p-2">
+            <div className={`font-bold ${isChaos ? 'text-red-400' : 'text-cyan-400'}`}>{packets}</div>
+            <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">Packets</div>
+          </div>
+          <div className="bg-[#050b14] border border-[#1e293b] rounded-lg p-2">
+            <div className="font-bold text-red-500">{collisions}</div>
+            <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">Collisions</div>
+          </div>
+          <div className="bg-[#050b14] border border-[#1e293b] rounded-lg p-2">
+            <div className={`font-bold ${batteryPercent > 50 ? 'text-green-500' : batteryPercent > 20 ? 'text-yellow-500' : 'text-red-500'}`}>
+              {Math.round(batteryPercent)}%
+            </div>
+            <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">Battery</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const NetworkPanel = React.memo(NetworkPanelBase, (prev, next) => {
+  return prev.nodes === next.nodes &&
+         prev.adjList === next.adjList &&
+         prev.isRunning === next.isRunning &&
+         prev.packets === next.packets &&
+         prev.collisions === next.collisions &&
+         prev.batteryPercent === next.batteryPercent &&
+         prev.approach === next.approach &&
+         prev.editMode === next.editMode &&
+         prev.selectedNode === next.selectedNode &&
+         prev.title === next.title &&
+         prev.subtitle === next.subtitle &&
+         prev.cyberpunkMode === next.cyberpunkMode;
+});
+
+function AlgorithmDiagram({ algo }: { algo: string }) {
+  if (algo === 'greedy') {
+    return (
+      <div className="bg-[#0B1020] p-4 rounded-lg border border-[#1e293b] mb-4 flex justify-center items-center shadow-inner">
+        <svg width="280" height="120" viewBox="0 0 280 120" className="text-slate-400 text-[10px] font-sans">
+           <line x1="50" y1="60" x2="125" y2="30" stroke="#334155" strokeWidth="2" strokeDasharray="4" />
+           <line x1="50" y1="60" x2="125" y2="90" stroke="#334155" strokeWidth="2" strokeDasharray="4" />
+           <line x1="125" y1="30" x2="200" y2="60" stroke="#334155" strokeWidth="2" strokeDasharray="4" />
+           <line x1="125" y1="90" x2="200" y2="60" stroke="#334155" strokeWidth="2" strokeDasharray="4" />
+           
+           <circle cx="50" cy="60" r="14" fill="#050b14" stroke="#06b6d4" strokeWidth="3" />
+           <text x="50" y="64" textAnchor="middle" fill="#06b6d4" fontSize="12" fontWeight="bold">1</text>
+
+           <circle cx="125" cy="30" r="14" fill="#050b14" stroke="#a855f7" strokeWidth="3" />
+           <text x="125" y="34" textAnchor="middle" fill="#a855f7" fontSize="12" fontWeight="bold">2</text>
+
+           <circle cx="125" cy="90" r="14" fill="#050b14" stroke="#ec4899" strokeWidth="3" />
+           <text x="125" y="94" textAnchor="middle" fill="#ec4899" fontSize="12" fontWeight="bold">3</text>
+
+           <circle cx="200" cy="60" r="14" fill="#050b14" stroke="#64748b" strokeWidth="3" strokeDasharray="4" />
+           <text x="200" y="64" textAnchor="middle" fill="#64748b" fontSize="12" fontWeight="bold">?</text>
+
+           <rect x="175" y="10" width="70" height="20" rx="4" fill="#0f172a" stroke="#1e293b" />
+           <text x="210" y="24" textAnchor="middle" fill="#3b82f6" fontWeight="bold">Picks 4</text>
+           <path d="M 210 30 L 210 40 M 206 36 L 210 40 L 214 36" fill="none" stroke="#3b82f6" strokeWidth="2" />
+        </svg>
+      </div>
+    );
+  }
+  
+  if (algo === 'tabu') {
+    return (
+      <div className="bg-[#0B1020] p-4 rounded-lg border border-[#1e293b] mb-4 flex justify-center items-center shadow-inner">
+        <svg width="280" height="120" viewBox="0 0 280 120" className="text-slate-400 text-[10px] font-sans">
+           <line x1="60" y1="60" x2="140" y2="60" stroke="#ef4444" strokeWidth="2" />
+           
+           <circle cx="60" cy="60" r="14" fill="#050b14" stroke="#06b6d4" strokeWidth="3" />
+           <text x="60" y="64" textAnchor="middle" fill="#06b6d4" fontSize="12" fontWeight="bold">1</text>
+
+           <circle cx="140" cy="60" r="14" fill="#050b14" stroke="#06b6d4" strokeWidth="3" />
+           <text x="140" y="64" textAnchor="middle" fill="#06b6d4" fontSize="12" fontWeight="bold">1</text>
+
+           <text x="100" y="50" textAnchor="middle" fill="#ef4444" fontWeight="bold">Conflict!</text>
+
+           <rect x="170" y="20" width="90" height="40" rx="4" fill="#0f172a" stroke="#1e293b" />
+           <text x="215" y="35" textAnchor="middle" fill="#e2e8f0" fontWeight="bold" fontSize="9">TABU LIST</text>
+           <text x="215" y="50" textAnchor="middle" fill="#64748b" fontSize="9">Node B 🚫 2</text>
+
+           <path d="M 140 80 Q 140 100 160 100 L 155 95 M 160 100 L 155 105" fill="none" stroke="#a855f7" strokeWidth="2" />
+           <text x="200" y="104" fill="#a855f7" fontWeight="bold">Must pick 3</text>
+        </svg>
+      </div>
+    );
   }
 
-  const reassignColors = (newAdj: Map<string, string[]>) => {
-    setOptNodes(prev => {
-      const base = prev.map(n => ({ ...n, color: -1 })); 
-      const optimized = computeSchedule(base, newAdj);
-      setOptMaxSlot(optimized.length > 0 ? Math.max(...optimized.map(n => n.color)) : 0);
-      return optimized;
-    });
+  if (algo === 'sa') {
+    return (
+      <div className="bg-[#0B1020] p-4 rounded-lg border border-[#1e293b] mb-4 flex justify-center items-center shadow-inner">
+        <svg width="280" height="120" viewBox="0 0 280 120" className="text-slate-400 text-[10px] font-sans">
+           <rect x="20" y="20" width="10" height="60" rx="5" fill="#0f172a" stroke="#1e293b" strokeWidth="2" />
+           <circle cx="25" cy="85" r="10" fill="#ef4444" />
+           <rect x="22" y="40" width="6" height="40" fill="#ef4444" />
+           <text x="45" y="88" fill="#ef4444" fontWeight="bold">Hot</text>
+           
+           <path d="M 60 40 Q 120 0 180 40 T 260 80" fill="none" stroke="#334155" strokeWidth="2" strokeDasharray="4" />
+           
+           <circle cx="120" cy="20" r="14" fill="#050b14" stroke="#ec4899" strokeWidth="3" />
+           <text x="120" y="45" textAnchor="middle" fill="#ec4899" fontWeight="bold">Worse State</text>
+           <text x="120" y="58" textAnchor="middle" fill="#ec4899" fontSize="8">(Accepted anyway)</text>
+
+           <circle cx="230" cy="70" r="14" fill="#050b14" stroke="#06b6d4" strokeWidth="3" />
+           <text x="230" y="100" textAnchor="middle" fill="#06b6d4" fontWeight="bold">Global Min</text>
+        </svg>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function AlgorithmInfoModal({ algo, onClose }: { algo: Approach, onClose: () => void }) {
+  const content = {
+    greedy: {
+      title: "Greedy Coloring",
+      desc: "Assigns time slots to nodes by picking the first available slot that doesn't conflict with neighbors. It is extremely fast to compute but often uses more slots than necessary. However, compared to standard Random Access, it guarantees zero collisions."
+    },
+    tabu: {
+      title: "Tabu Search",
+      desc: "An iterative metaheuristic search that maintains a 'tabu list' of recently visited states to avoid getting stuck in local optima. It continuously refines the slot assignment to minimize total slots. It strikes a great balance between computation time and energy efficiency."
+    },
+    sa: {
+      title: "Simulated Annealing",
+      desc: "A probabilistic optimization inspired by metallurgy. Early in the process, it occasionally accepts worse assignments to explore the possibility space, slowly 'cooling down' to converge on a highly optimized, near-perfect slot allocation. It is slower but yields the tightest schedules."
+    },
+    chaos: { title: "Random Access", desc: "Randomly transmits packets." }
+  }[algo];
+
+  if (!content || algo === 'chaos') return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-6 shadow-2xl max-w-md w-full mx-4 relative" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+          <X size={20} />
+        </button>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="bg-cyan-900/30 p-2 rounded-lg text-cyan-400">
+            <Info size={24} />
+          </div>
+          <h3 className="text-xl font-bold text-white">{content.title} vs Chaos</h3>
+        </div>
+        <p className="text-slate-300 text-sm leading-relaxed mb-4">
+          {content.desc}
+        </p>
+
+        <AlgorithmDiagram algo={algo} />
+
+        <div className="bg-[#050b14] p-4 rounded-lg border border-[#1e293b]">
+          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vs. Random Access (Chaos)</h4>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            In standard Random Access, nodes transmit probabilistically, leading to massive energy waste from collisions and retransmissions. {content.title} pre-calculates an interference-free schedule, guaranteeing 100% successful packet delivery and saving enormous amounts of battery life at the cost of upfront computation.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
+  if (!data || data.length === 0) return null;
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-[#0f172a] border border-[#1e293b] p-3 rounded shadow-xl text-xs text-white">
+          <p className="font-bold mb-2">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center gap-2 mb-1">
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: entry.color }} />
+              <span className="text-slate-300">{entry.name}:</span>
+              <span className="font-bold">{entry.value}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
   };
 
-  const handleNodeClick = (nodeId: string) => {
+  const schemeColors: Record<string, string> = {
+    'No Coloring': '#ef4444',
+    'Greedy': '#06b6d4',
+    'Tabu': '#ec4899',
+    'SA': '#a855f7'
+  };
+
+  const formattedData = data.map(d => ({
+    ...d,
+    name: d.scheme === 'chaos' ? 'No Coloring' : d.scheme === 'greedy' ? 'Greedy' : d.scheme === 'tabu' ? 'Tabu' : 'SA',
+    fillColor: schemeColors[d.scheme === 'chaos' ? 'No Coloring' : d.scheme === 'greedy' ? 'Greedy' : d.scheme === 'tabu' ? 'Tabu' : 'SA']
+  }));
+
+  const optimizationData = formattedData.filter(d => d.scheme !== 'chaos');
+
+  return (
+    <div className="mt-8 flex flex-col gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Colors vs Time */}
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-cyan-900/5">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <Activity size={16} className="text-cyan-400" /> Optimisation: Colors vs Time
+          </h3>
+          <div style={{ width: '100%', height: 300 }}>
+              <ComposedChart width={500} height={300} data={optimizationData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <YAxis yAxisId="left" stroke="#06b6d4" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <YAxis yAxisId="right" orientation="right" stroke="#ec4899" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                <Bar yAxisId="left" dataKey="slots" name="Colors used" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                <Bar yAxisId="right" dataKey="timeMs" name="Time (ms)" fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              </ComposedChart>
+          </div>
+        </div>
+
+        {/* Delay & Energy */}
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-purple-900/5">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <Activity size={16} className="text-purple-400" /> IoT Performance: Delay & Energy
+          </h3>
+          <div style={{ width: '100%', height: 300 }}>
+              <BarChart width={500} height={300} data={formattedData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                <Bar dataKey="avgDelay" name="Avg delay (ms)" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                <Bar dataKey="energy" name="Energy units" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              </BarChart>
+          </div>
+        </div>
+      </div>
+
+      {/* Success Rate & Throughput */}
+      <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-cyan-900/5">
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+          <Activity size={16} className="text-cyan-400" /> Efficiency: Success Rate & Throughput
+        </h3>
+        <div style={{ width: '100%', height: 300 }}>
+            <LineChart width={1000} height={300} data={formattedData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+              <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <YAxis yAxisId="left" stroke="#06b6d4" domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <YAxis yAxisId="right" orientation="right" stroke="#ec4899" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+              <Line yAxisId="left" type="monotone" dataKey="successRate" name="Success %" stroke="#06b6d4" strokeWidth={3} dot={{ r: 5, fill: '#06b6d4', stroke: '#0B1020', strokeWidth: 2 }} activeDot={{ r: 7 }} />
+              <Line yAxisId="right" type="monotone" dataKey="throughput" name="Throughput (msg/ms)" stroke="#ec4899" strokeWidth={3} dot={{ r: 5, fill: '#ec4899', stroke: '#0B1020', strokeWidth: 2 }} activeDot={{ r: 7 }} />
+            </LineChart>
+        </div>
+      </div>
+
+      {/* Scheme Comparison Table */}
+      <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-purple-900/5">
+        <h3 className="text-white font-bold mb-4">Scheme Comparison</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-400">
+            <thead className="text-xs uppercase text-slate-500 border-b border-[#1e293b]">
+              <tr>
+                <th className="px-4 py-3">Scheme</th>
+                <th className="px-4 py-3">Slots</th>
+                <th className="px-4 py-3">Collisions</th>
+                <th className="px-4 py-3">Success</th>
+                <th className="px-4 py-3">Avg Delay</th>
+                <th className="px-4 py-3">Energy</th>
+                <th className="px-4 py-3">Throughput</th>
+              </tr>
+            </thead>
+            <tbody>
+              {formattedData.map((row, idx) => (
+                <tr key={idx} className="border-b border-[#1e293b]/50 hover:bg-[#0f172a]/50 transition-colors">
+                  <td className="px-4 py-4 font-medium text-slate-200">{row.name}</td>
+                  <td className="px-4 py-4">{row.slots}</td>
+                  <td className={`px-4 py-4 ${row.collisions > 0 ? 'text-red-400' : 'text-slate-400'}`}>{row.collisions}</td>
+                  <td className="px-4 py-4">{row.successRate}%</td>
+                  <td className="px-4 py-4">{row.avgDelay} ms</td>
+                  <td className="px-4 py-4">{row.energy}</td>
+                  <td className="px-4 py-4">{row.throughput.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'comparison'>('dashboard');
+  const [showLogsSidebar, setShowLogsSidebar] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [infoPopup, setInfoPopup] = useState<Approach | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [cyberpunkMode, setCyberpunkMode] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<AlgorithmMetrics[]>([]);
+  const clickCountRef = useRef(0);
+  const clickTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const handleTitleClick = () => {
+    clickCountRef.current += 1;
+    if (clickCountRef.current === 5) {
+      setCyberpunkMode(prev => !prev);
+      clickCountRef.current = 0;
+    }
+    clearTimeout(clickTimeoutRef.current);
+    clickTimeoutRef.current = setTimeout(() => {
+      clickCountRef.current = 0;
+    }, 1000);
+  };
+
+  const addLog = useCallback((message: string, type: LogEntry['type'], panel?: 'A' | 'B') => {
+    setLogs(prev => {
+      const newLog: LogEntry = { id: Math.random().toString(), timestamp: new Date(), message, type, panel };
+      return [newLog, ...prev].slice(0, 300);
+    });
+  }, []);
+
+  const [nodeCount, setNodeCount] = useState(27);
+  const [edgeDensity, setEdgeDensity] = useState(0.16);
+  const [seed, setSeed] = useState(1773);
+  const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
+  const [isGenerated, setIsGenerated] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const [approachA, setApproachA] = useState<Approach>('chaos');
+  const [nodesA, setNodesA] = useState<IoTNode[]>([]);
+  const [runningA, setRunningA] = useState(false);
+  const [packetsA, setPacketsA] = useState(0);
+  const [collisionsA, setCollisionsA] = useState(0);
+  const [maxSlotA, setMaxSlotA] = useState(0);
+  const slotRefA = useRef(0);
+
+  const [approachB, setApproachB] = useState<Approach>('greedy');
+  const [nodesB, setNodesB] = useState<IoTNode[]>([]);
+  const [runningB, setRunningB] = useState(false);
+  const [packetsB, setPacketsB] = useState(0);
+  const [collisionsB, setCollisionsB] = useState(0);
+  const [maxSlotB, setMaxSlotB] = useState(0);
+  const slotRefB = useRef(0);
+
+  const calculateInterferenceRadius = (density: number) => density * 600;
+
+  const handleGenerate = useCallback(() => {
+    const radius = calculateInterferenceRadius(edgeDensity);
+    const nodes = generateNodes(nodeCount, CANVAS_WIDTH, CANVAS_HEIGHT, seed);
+    const adj = buildAdjacencyList(nodes, radius);
+    
+    setAdjList(adj);
+    
+    const reColoredA = applyColoring(nodes.map(n => ({ ...n, state: 'IDLE' })), adj, approachA);
+    setNodesA(reColoredA);
+    setMaxSlotA(reColoredA.length > 0 ? Math.max(...reColoredA.map(n => n.color)) : 0);
+
+    const reColoredB = applyColoring(nodes.map(n => ({ ...n, state: 'IDLE' })), adj, approachB);
+    setNodesB(reColoredB);
+    setMaxSlotB(reColoredB.length > 0 ? Math.max(...reColoredB.map(n => n.color)) : 0);
+    
+    // Generate analytics data in background
+    setTimeout(() => {
+      const metrics = runFastForwardAnalytics(nodes, adj);
+      setAnalyticsData(metrics);
+    }, 10);
+    
+    setRunningA(false); setRunningB(false);
+    setCollisionsA(0); setCollisionsB(0);
+    setPacketsA(0); setPacketsB(0);
+    setEditMode(false); setSelectedNode(null);
+    slotRefA.current = 0; slotRefB.current = 0;
+
+    addLog(`Generated new network with ${nodeCount} nodes and ${edgeDensity} edge density.`, 'info');
+  }, [nodeCount, edgeDensity, seed, approachA, approachB, addLog]);
+
+  const handleConfirmGenerate = () => {
+    handleGenerate();
+    setIsGenerated(true);
+  };
+
+  const confirmReset = () => {
+    setAdjList(new Map());
+    setNodesA([]); setNodesB([]);
+    setAnalyticsData([]);
+    setRunningA(false); setRunningB(false);
+    setCollisionsA(0); setCollisionsB(0);
+    setPacketsA(0); setPacketsB(0);
+    setEditMode(false); setSelectedNode(null);
+    setIsGenerated(false); setShowResetModal(false);
+    addLog('Network cleared.', 'warning');
+  };
+
+  useEffect(() => {
+    if (isGenerated && nodesA.length > 0) {
+      const base = nodesA.map(n => ({ ...n, color: -1 }));
+      const reColored = applyColoring(base, adjList, approachA);
+      setNodesA(reColored);
+      setMaxSlotA(reColored.length > 0 ? Math.max(...reColored.map(n => n.color)) : 0);
+      addLog(`Panel A switched to ${getApproachName(approachA)}`, 'info', 'A');
+    }
+  }, [approachA]);
+
+  useEffect(() => {
+    if (isGenerated && nodesB.length > 0) {
+      const base = nodesB.map(n => ({ ...n, color: -1 }));
+      const reColored = applyColoring(base, adjList, approachB);
+      setNodesB(reColored);
+      setMaxSlotB(reColored.length > 0 ? Math.max(...reColored.map(n => n.color)) : 0);
+      addLog(`Panel B switched to ${getApproachName(approachB)}`, 'info', 'B');
+    }
+  }, [approachB]);
+
+  const handleNodeMove = (id: string, nx: number, ny: number) => {
+    setNodesA(prev => prev.map(n => n.id === id ? { ...n, x: nx, y: ny } : n));
+    setNodesB(prev => prev.map(n => n.id === id ? { ...n, x: nx, y: ny } : n));
+  };
+
+  const handleNodeMoveEnd = () => {
+    const radius = calculateInterferenceRadius(edgeDensity);
+    const adj = buildAdjacencyList(nodesA, radius);
+    setAdjList(adj);
+    
+    const reColoredA = applyColoring(nodesA.map(n => ({ ...n, color: -1 })), adj, approachA);
+    setNodesA(reColoredA);
+    setMaxSlotA(reColoredA.length > 0 ? Math.max(...reColoredA.map(n => n.color)) : 0);
+
+    const reColoredB = applyColoring(nodesB.map(n => ({ ...n, color: -1 })), adj, approachB);
+    setNodesB(reColoredB);
+    setMaxSlotB(reColoredB.length > 0 ? Math.max(...reColoredB.map(n => n.color)) : 0);
+
+    setTimeout(() => {
+      const metrics = runFastForwardAnalytics(nodesA, adj);
+      setAnalyticsData(metrics);
+    }, 10);
+  };
+
+  const handleNodeRightClick = (nodeId: string) => {
+    if (!editMode) return;
     if (!selectedNode) {
       setSelectedNode(nodeId); 
     } else if (selectedNode === nodeId) {
@@ -362,427 +688,360 @@ export default function App() {
           next.set(selectedNode, [...edges1, nodeId]);
           next.set(nodeId, [...edges2, selectedNode]);
         }
-        reassignColors(next); 
+        
+        const reColoredA = applyColoring(nodesA.map(n => ({ ...n, color: -1 })), next, approachA);
+        setNodesA(reColoredA);
+        setMaxSlotA(reColoredA.length > 0 ? Math.max(...reColoredA.map(n => n.color)) : 0);
+
+        const reColoredB = applyColoring(nodesB.map(n => ({ ...n, color: -1 })), next, approachB);
+        setNodesB(reColoredB);
+        setMaxSlotB(reColoredB.length > 0 ? Math.max(...reColoredB.map(n => n.color)) : 0);
+
+        setTimeout(() => {
+          const metrics = runFastForwardAnalytics(nodesA, next);
+          setAnalyticsData(metrics);
+        }, 10);
+
         return next;
       });
+      setSelectedNode(null);
     }
   };
 
-  const handleRemoveEdge = (nodeA: string, nodeB: string) => {
-    setAdjList(prev => {
-      const next = new Map(prev);
-      const edgesA = next.get(nodeA) || [];
-      const edgesB = next.get(nodeB) || [];
-      next.set(nodeA, edgesA.filter(id => id !== nodeB));
-      next.set(nodeB, edgesB.filter(id => id !== nodeA));
-      reassignColors(next);
-      return next;
-    });
+  const useSimulationLoop = (
+    running: boolean, approach: Approach, nodes: IoTNode[], setNodes: React.Dispatch<React.SetStateAction<IoTNode[]>>,
+    adjList: Map<string, string[]>, setCollisions: React.Dispatch<React.SetStateAction<number>>,
+    setPackets: React.Dispatch<React.SetStateAction<number>>, maxSlot: number, slotRef: React.MutableRefObject<number>,
+    panelId: 'A' | 'B'
+  ) => {
+    useEffect(() => {
+      if (!running) return;
+      let ticks = 0;
+      const interval = setInterval(() => {
+        ticks++;
+        setNodes(currentNodes => {
+          let tickCollisions = 0, tickSuccesses = 0;
+          let updated: IoTNode[];
+
+          if (approach === 'chaos') {
+            const attempting = new Set(currentNodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id));
+            const collided = new Set<string>();
+            attempting.forEach(id => {
+              const neighbors = adjList.get(id) || [];
+              if (neighbors.some(nId => attempting.has(nId))) collided.add(id);
+            });
+
+            updated = currentNodes.map(node => {
+              if (node.battery <= 0) return { ...node, state: 'SLEEP' as NodeState };
+              if (collided.has(node.id)) {
+                tickCollisions++;
+                return { ...node, state: 'COLLISION' as NodeState, battery: Math.max(0, node.battery - 300) };
+              } else if (attempting.has(node.id)) {
+                tickSuccesses++;
+                return { ...node, state: 'TRANSMIT' as NodeState, battery: Math.max(0, node.battery - 150) };
+              }
+              return { ...node, state: 'IDLE' as NodeState, battery: Math.max(0, node.battery - 50) };
+            });
+            tickCollisions = Math.floor(tickCollisions / 2);
+          } else {
+            const nextSlot = slotRef.current >= maxSlot ? 0 : slotRef.current + 1;
+            slotRef.current = nextSlot;
+
+            updated = currentNodes.map(node => {
+              const transmitting = node.color === nextSlot && node.battery > 0;
+              if (transmitting) tickSuccesses++;
+              const drain = transmitting ? 150 : (node.battery > 0 ? 5 : 0);
+              return {
+                ...node,
+                battery: Math.max(0, node.battery - drain),
+                state: (transmitting ? 'TRANSMIT' : 'SLEEP') as NodeState,
+              };
+            });
+          }
+
+          setCollisions(p => p + tickCollisions);
+          setPackets(p => p + tickSuccesses);
+          
+          if (tickCollisions > 0) {
+            addLog(`Tick: ${tickCollisions} collisions detected!`, 'error', panelId);
+          } else if (ticks % 3 === 0 && tickSuccesses > 0) {
+            addLog(`Tick: ${tickSuccesses} packets transmitted cleanly.`, 'success', panelId);
+          }
+
+          return updated;
+        });
+      }, 600);
+      return () => clearInterval(interval);
+    }, [running, approach, adjList, maxSlot, panelId]);
   };
 
-  const handleDeleteNode = (nodeIdToDelete: string) => {
-    setChaosNodes(prev => prev.filter(n => n.id !== nodeIdToDelete));
-    setAdjList(prevAdj => {
-      const nextAdj = new Map(prevAdj);
-      nextAdj.delete(nodeIdToDelete); 
-      nextAdj.forEach((neighbors, key) => {
-        nextAdj.set(key, neighbors.filter(id => id !== nodeIdToDelete));
-      });
-      setOptNodes(prevOpt => {
-        const remaining = prevOpt.filter(n => n.id !== nodeIdToDelete).map(n => ({ ...n, color: -1 }));
-        const optimized = computeSchedule(remaining, nextAdj);
-        setOptMaxSlot(optimized.length > 0 ? Math.max(...optimized.map(n => n.color)) : 0);
-        return optimized;
-      });
-      return nextAdj;
-    });
-    if (selectedNode === nodeIdToDelete) setSelectedNode(null);
-    setInspectedNodeId(null); 
-  };
+  useSimulationLoop(runningA, approachA, nodesA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A');
+  useSimulationLoop(runningB, approachB, nodesB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B');
 
-  useEffect(() => {
-    if (generated && !eitherRunning) {
-      reassignColors(adjList);
-    }
-  }, [algorithm]);
+  const batteryA = nodesA.length > 0 ? (nodesA.reduce((s, n) => s + n.battery, 0) / nodesA.length / MAX_BATTERY) * 100 : 0;
+  const batteryB = nodesB.length > 0 ? (nodesB.reduce((s, n) => s + n.battery, 0) / nodesB.length / MAX_BATTERY) * 100 : 0;
 
-  // ── Chaos Loop ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!chaosRunning) return;
-    const interval = setInterval(() => {
-      setChaosNodes(currentNodes => {
-        const attempting = new Set(
-          currentNodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id)
-        );
-        const collided = new Set<string>();
-        attempting.forEach(id => {
-          const neighbors = adjList.get(id) || [];
-          if (neighbors.some(nId => attempting.has(nId))) collided.add(id);
-        });
+  const isAnyRunning = runningA || runningB;
 
-        let tickCollisions = 0, tickSuccesses = 0;
-        const updated = currentNodes.map(node => {
-          if (node.battery <= 0) {
-            return { ...node, state: 'SLEEP' as const };
-          }
-          if (collided.has(node.id)) {
-            tickCollisions++;
-            return { ...node, state: 'COLLISION' as const, battery: Math.max(0, node.battery - 300) };
-          } else if (attempting.has(node.id)) {
-            tickSuccesses++;
-            return { ...node, state: 'TRANSMIT' as const, battery: Math.max(0, node.battery - 150) };
-          }
-          return { ...node, state: 'IDLE' as const, battery: Math.max(0, node.battery - 50) };
-        });
-
-        setChaosCollisions(p => p + Math.floor(tickCollisions / 2));
-        setChaosPackets(p => p + tickSuccesses);
-        return updated;
-      });
-    }, 600);
-    return () => clearInterval(interval);
-  }, [chaosRunning, adjList]);
-
-  // ── Optimized Loop ────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!optRunning) return;
-    const interval = setInterval(() => {
-      const nextSlot = optSlotRef.current >= optMaxSlot ? 0 : optSlotRef.current + 1;
-      optSlotRef.current = nextSlot;
-      setOptCurrentSlot(nextSlot);
-
-      setOptNodes(currentNodes => {
-        let tickSuccesses = 0;
-        const updated = currentNodes.map(node => {
-          const transmitting = node.color === nextSlot && node.battery > 0;
-          if (transmitting) tickSuccesses++;
-          
-          const drain = transmitting ? 150 : (node.battery > 0 ? 5 : 0);
-          
-          return {
-            ...node,
-            battery: Math.max(0, node.battery - drain),
-            state: transmitting ? 'TRANSMIT' as const : 'SLEEP' as const,
-          };
-        });
-        setOptPackets(p => p + tickSuccesses);
-        return updated;
-      });
-    }, 600);
-    return () => clearInterval(interval);
-  }, [optRunning, optMaxSlot]);
-
-  const chaosBattery = chaosNodes.length > 0 ? (chaosNodes.reduce((s, n) => s + n.battery, 0) / chaosNodes.length / MAX_BATTERY) * 100 : 0;
-  const optBattery = optNodes.length > 0 ? (optNodes.reduce((s, n) => s + n.battery, 0) / optNodes.length / MAX_BATTERY) * 100 : 0;
-  const collisionRate = (chaosPackets + chaosCollisions) > 0 ? Math.round((chaosCollisions / (chaosPackets + chaosCollisions)) * 100) : 0;
-  const batteryAdvantage = Math.round(optBattery - chaosBattery);
-  const packetAdvantage = chaosPackets > 0 ? Math.round(((optPackets - chaosPackets) / chaosPackets) * 100) : 0;
-
-  return (
-    <div className={`min-h-screen ${theme.bg} ${theme.text} p-6 flex flex-col items-center font-sans transition-colors duration-500 relative`}>
-      
-      {/* Dark Mode Toggle */}
-      <button 
-        onClick={() => setIsDark(!isDark)} 
-        className={`absolute top-6 right-8 px-4 py-2 rounded-full font-bold text-sm transition-all duration-300 shadow-md flex items-center gap-2
-          ${isDark ? 'bg-[#1e293b] text-cyan-400 border border-[#334155] hover:bg-[#283548]' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-      >
-        {isDark ? '☀️ Light Mode' : '🌙 Dark Mode'}
-      </button>
-
-      <header className="mb-6 text-center pt-2">
-        <h1 className={`text-4xl font-extrabold mb-2 tracking-tight ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-emerald-400' : 'text-slate-800'}`}>
-          Network Operations Center
-        </h1>
-        <p className={`${theme.textMuted} text-sm font-medium uppercase tracking-widest`}>Graph Coloring vs. Random Access</p>
-      </header>
-
-      {/* Control Panel */}
-      <div className="flex flex-col items-center mb-6 w-full max-w-4xl gap-3">
-        <div className={`flex flex-wrap gap-3 justify-center items-center ${theme.card} p-3 rounded-2xl shadow-sm border transition-colors duration-500`}>
-          <div className="flex items-center gap-2 px-2">
-            <label className={`text-sm font-semibold ${theme.text}`}>Nodes:</label>
-            <input 
-              type="number" min="2" max="50" value={nodeCount}
-              onChange={(e) => setNodeCount(Number(e.target.value))}
-              className={`w-14 border rounded px-2 py-1 text-sm outline-none font-mono transition-colors
-                ${isDark ? 'bg-[#0B1020] border-[#334155] text-white focus:border-cyan-500' : 'border-slate-300 focus:border-blue-500'}`}
-            />
-          </div>
-
-          <div className="flex items-center gap-2 px-2">
-            <label className={`text-sm font-semibold ${theme.text}`}>Algo:</label>
-            <select 
-              value={algorithm}
-              onChange={(e) => setAlgorithm(e.target.value as any)}
-              disabled={eitherRunning}
-              className={`border rounded px-2 py-1 text-sm outline-none font-sans transition-colors
-                ${isDark ? 'bg-[#0B1020] border-[#334155] text-white focus:border-cyan-500' : 'border-slate-300 focus:border-blue-500'}`}
-            >
-              <option value="greedy">Greedy Heuristic</option>
-              <option value="annealing">Simulated Annealing</option>
-              <option value="tabu">Tabu Search</option>
-            </select>
-          </div>
-
-          <button onClick={handleGenerate} disabled={eitherRunning}
-            className={`px-4 py-1.5 rounded-lg transition text-sm font-bold shadow-sm disabled:opacity-50
-              ${isDark ? 'bg-[#1e293b] text-white hover:bg-[#2a3850]' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-            🔄 Auto-Generate
-          </button>
-          
-          <div className={`h-6 w-px ${isDark ? 'bg-[#334155]' : 'bg-slate-200'} mx-1`}></div>
-          
-          <button onClick={() => { setEditMode(!editMode); setSelectedNode(null); }} disabled={!generated || eitherRunning}
-            className={`px-4 py-1.5 rounded-lg border transition text-sm font-bold disabled:opacity-50 shadow-sm
-              ${editMode 
-                ? (isDark ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-purple-100 text-purple-700 border-purple-300') 
-                : (isDark ? 'bg-transparent text-slate-300 border-[#334155] hover:bg-[#1e293b]' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}`}>
-            {editMode ? '✍️ Editing Active...' : '✏️ Draw Connections'}
-          </button>
-
-          <div className={`h-6 w-px ${isDark ? 'bg-[#334155]' : 'bg-slate-200'} mx-1`}></div>
-
-          {generated && !eitherRunning && (
-            <button onClick={handleRunBoth}
-              className={`px-5 py-1.5 rounded-lg transition text-sm font-bold shadow-lg
-                ${isDark ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/20' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-              ▶▶ Run Both
-            </button>
-          )}
-          {eitherRunning && (
-            <button onClick={handleStopBoth}
-              className={`px-5 py-1.5 rounded-lg transition text-sm font-bold shadow-sm border
-                ${isDark ? 'bg-red-900/30 text-red-400 border-red-900/50 hover:bg-red-900/50' : 'bg-red-100 text-red-600 border-red-200 hover:bg-red-200'}`}>
-              ⏹ Stop Both
-            </button>
-          )}
+  const paramsSection = (
+    <section className="bg-[#0B1020] border border-[#1e293b] rounded-2xl p-6 shadow-xl shadow-cyan-900/5 mb-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 text-white font-medium">
+          <Activity size={18} className="text-cyan-400" />
+          <h2>Simulation Parameters</h2>
         </div>
-
-        {canEdit && (
-          <div className={`text-sm px-4 py-2 rounded-lg animate-pulse border
-            ${isDark ? 'bg-purple-900/20 text-purple-300 border-purple-500/30' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
-            <strong>Edit Mode:</strong> <b>Right-click</b> nodes to connect them. <b>Left-click</b> a node to inspect or delete it.
+        {editMode && (
+          <div className="text-xs text-purple-400 bg-purple-900/20 px-3 py-1 rounded border border-purple-900/50 animate-pulse">
+            Right-click two nodes to connect or disconnect them.
           </div>
         )}
       </div>
-
-      {/* Side-by-Side Node Inspector Panel */}
-      {inspectedNodeId && (
-        <div className={`w-full max-w-7xl p-5 rounded-2xl shadow-2xl border mb-6 flex flex-col gap-4 animate-fade-in relative transition-colors duration-500
-          ${isDark ? 'bg-[#1e293b] border-purple-500/30 shadow-[0_4px_40px_rgba(168,85,247,0.15)]' : 'bg-white border-indigo-200 shadow-indigo-100/50'}`}>
-          
-          {(() => {
-            const optNode = optNodes.find(n => n.id === inspectedNodeId);
-            const chaosNode = chaosNodes.find(n => n.id === inspectedNodeId);
-            if (!optNode || !chaosNode) return null;
-            const neighbors = adjList.get(optNode.id) || [];
-            
-            return (
-              <>
-                <div className="flex justify-between items-center border-b pb-3 border-slate-700/30">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-inner
-                      ${optNode.color === 0 ? 'bg-cyan-500' : optNode.color === 1 ? 'bg-purple-500' : optNode.color === 2 ? 'bg-pink-500' : optNode.color === 3 ? 'bg-blue-500' : optNode.color === 4 ? 'bg-orange-500' : 'bg-slate-505'}`}>
-                      {optNode.id.replace('Node_', '')}
-                    </div>
-                    <div>
-                      <h3 className={`font-bold text-lg ${isDark ? 'text-white' : 'text-slate-800'}`}>Node Analysis</h3>
-                      <p className={`text-xs uppercase font-bold tracking-widest ${theme.textMuted}`}>Live Head-to-Head Data</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 items-center">
-                    {canEdit && (
-                      <button onClick={() => handleDeleteNode(optNode.id)} 
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition shadow-sm flex items-center gap-1.5
-                          ${isDark ? 'bg-red-900/20 text-red-400 border-red-900/50 hover:bg-red-900/40' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}>
-                        <span className="text-sm">🗑️</span> Destroy Node
-                      </button>
-                    )}
-                    <button onClick={() => setInspectedNodeId(null)} className={`font-bold text-2xl transition hover:scale-110 ${isDark ? 'text-slate-500 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`}>
-                      ✕
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Chaos Side */}
-                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#0B1020]/50 border-orange-900/30' : 'bg-orange-50/50 border-orange-100'}`}>
-                    <h4 className="text-orange-500 font-bold mb-3 flex items-center gap-2"><span className="text-lg">⚡</span> Chaos Network</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Current State</span>
-                        <span className={`font-mono font-bold text-lg ${chaosNode.state === 'COLLISION' ? 'text-red-500' : chaosNode.state === 'TRANSMIT' ? 'text-yellow-400' : theme.text}`}>
-                          {chaosNode.state}
-                        </span>
-                      </div>
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Battery Remaining</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-mono font-bold ${theme.text}`}>{Math.round((chaosNode.battery / MAX_BATTERY) * 100)}%</span>
-                          <div className={`w-full max-w-[80px] rounded-full h-2 ${isDark ? 'bg-[#151B2E]' : 'bg-slate-200'}`}>
-                            <div className={`${(chaosNode.battery / MAX_BATTERY) > 0.4 ? 'bg-green-500' : (chaosNode.battery / MAX_BATTERY) > 0.15 ? 'bg-yellow-500' : 'bg-red-500'} h-2 rounded-full transition-all`} style={{ width: `${(chaosNode.battery / MAX_BATTERY) * 100}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Optimized Side */}
-                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-[#0B1020]/50 border-cyan-900/30' : 'bg-blue-50/50 border-blue-100'}`}>
-                    <h4 className="text-cyan-400 font-bold mb-3 flex items-center gap-2"><span className="text-lg">🎯</span> Optimized Network</h4>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Time Slot</span>
-                        <span className={`font-mono font-bold text-lg ${theme.text}`}>
-                          {optNode.color >= 0 ? `Slot ${optNode.color}` : 'None'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Current State</span>
-                        <span className={`font-mono font-bold text-lg ${optNode.state === 'TRANSMIT' ? 'text-yellow-400' : theme.text}`}>
-                          {optNode.state}
-                        </span>
-                      </div>
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${theme.textMuted}`}>Battery Remaining</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-mono font-bold ${theme.text}`}>{Math.round((optNode.battery / MAX_BATTERY) * 100)}%</span>
-                          <div className={`w-full max-w-[80px] rounded-full h-2 ${isDark ? 'bg-[#151B2E]' : 'bg-slate-200'}`}>
-                            <div className={`${(optNode.battery / MAX_BATTERY) > 0.4 ? 'bg-green-500' : (optNode.battery / MAX_BATTERY) > 0.15 ? 'bg-yellow-500' : 'bg-red-500'} h-2 rounded-full transition-all`} style={{ width: `${(optNode.battery / MAX_BATTERY) * 100}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider block mb-2 ${theme.textMuted}`}>Manage Interferences ({neighbors.length})</span>
-                  <div className="flex flex-wrap gap-2">
-                    {neighbors.length === 0 ? (
-                      <span className="text-sm font-bold text-slate-500 italic">No interference detected</span>
-                    ) : (
-                      neighbors.map(nId => (
-                        <div key={nId} className={`flex items-center pl-3 pr-1 py-1.5 rounded-md text-xs font-bold border shadow-sm
-                          ${isDark ? 'bg-orange-900/20 text-orange-400 border-orange-900/50' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
-                          Node {nId.replace('Node_', '')}
-                          {canEdit && (
-                            <button onClick={() => handleRemoveEdge(optNode.id, nId)} 
-                              className={`ml-2 rounded w-6 h-6 flex items-center justify-center transition font-bold
-                                ${isDark ? 'bg-orange-900/40 text-orange-500 hover:bg-red-500/20 hover:text-red-400' : 'bg-orange-100 text-orange-500 hover:text-red-600 hover:bg-red-100'}`}
-                            >✕</button>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-3">
+          <div className="flex justify-between items-center text-sm">
+            <label className="text-slate-400">IoT Nodes</label>
+            <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{nodeCount}</span>
+          </div>
+          <input type="range" min="5" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-      )}
-
-      {/* Two simulation panels */}
-      <div className="w-full max-w-7xl grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500 flex flex-col`}>
-          <ChaosPanel
-            nodes={chaosNodes} adjList={adjList} isRunning={chaosRunning} collisions={chaosCollisions} packets={chaosPackets} batteryPercent={chaosBattery}
-            onStart={() => setChaosRunning(true)} onStop={() => setChaosRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark} nodeRadius={nodeRadius}
-          />
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-3">
+          <div className="flex justify-between items-center text-sm">
+            <label className="text-slate-400">Edge density</label>
+            <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{edgeDensity}</span>
+          </div>
+          <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-        <div className={`${theme.card} rounded-2xl shadow-sm border p-4 transition-colors duration-500 flex flex-col`}>
-          <OptimizedPanel
-            nodes={optNodes} adjList={adjList} isRunning={optRunning} packets={optPackets} batteryPercent={optBattery}
-            onStart={() => setOptRunning(true)} onStop={() => setOptRunning(false)}
-            canEdit={canEdit} selectedNode={selectedNode} onNodeRightClick={handleNodeClick} onNodeLeftClick={setInspectedNodeId} isDark={isDark} nodeRadius={nodeRadius}
-          />
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-2">
+          <div className="flex justify-between items-center text-sm">
+            <label className="text-slate-400">Random seed</label>
+            <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{seed}</span>
+          </div>
+          <button onClick={() => setSeed(Math.floor(Math.random() * 10000))} disabled={isAnyRunning} className={`bg-[#0f172a] hover:bg-[#1e293b] border border-[#334155] text-white text-sm font-medium py-2 px-2 rounded-lg transition flex items-center justify-center gap-1 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
+            <span>✨</span> Randomize
+          </button>
+        </div>
+        <div className="flex flex-row gap-3 col-span-1 md:col-span-4 justify-end">
+          <button onClick={handleConfirmGenerate} disabled={isAnyRunning} className={`flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-3 rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
+            <Zap size={16} /> {isGenerated ? 'Regenerate' : 'Generate & Analyze'}
+          </button>
+          {isGenerated && (
+            <button onClick={() => setShowResetModal(true)} disabled={isAnyRunning} className={`bg-[#0f172a] hover:bg-[#1e293b] text-slate-300 font-medium py-2 px-3 rounded-lg border border-[#334155] transition-all flex items-center justify-center gap-1 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`} title="Reset">
+              <Cpu size={16} />
+            </button>
+          )}
+          {isGenerated && (
+            <button onClick={() => { setEditMode(!editMode); setSelectedNode(null); }} disabled={isAnyRunning} className={`text-sm font-medium py-2 px-3 rounded-lg transition flex items-center justify-center gap-1 ${editMode ? 'bg-purple-900/50 border border-purple-500 text-purple-300' : 'bg-[#0f172a] hover:bg-[#1e293b] border border-[#334155] text-slate-300'} ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`} title={editMode ? 'Stop Editing' : 'Draw/Edit Mode'}>
+              <span>✏️</span> {editMode ? 'Stop Edit' : 'Edit'}
+            </button>
+          )}
         </div>
       </div>
+    </section>
+  );
 
-      {/* 📊 Advanced Algorithmic Benchmarking Panel */}
-      {generated && (() => {
-        const greedyResult = assignTimeSlots(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
-        const annealingResult = assignSlotsAnnealing(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
-        const tabuResult = assignSlotsTabu(chaosNodes.map((n: IoTNode) => ({ ...n })), adjList);
-
-        const getUniqueSlots = (nodesArr: IoTNode[]) => 
-          new Set(nodesArr.filter(n => n.color >= 0).map(n => n.color)).size;
-
-        const greedySlots = getUniqueSlots(greedyResult);
-        const annealingSlots = getUniqueSlots(annealingResult);
-        const tabuSlots = getUniqueSlots(tabuResult);
-
-        return (
-          <div className={`w-full max-w-7xl ${theme.card} rounded-2xl shadow-sm border p-6 transition-colors duration-500 mt-2`}>
-            <div className="flex flex-col mb-4">
-              <h3 className="text-sm font-black uppercase tracking-widest text-cyan-400">
-                📊 Algorithmic Performance Benchmarking
-              </h3>
-              <p className={`text-xs ${theme.textMuted}`}>Live comparative metrics over the current graph topology</p>
+  return (
+    <div className="flex h-screen bg-[#050b14] text-slate-200 font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} transition-all duration-300 bg-[#0B1020] border-r border-[#1e293b] flex flex-col z-20`}>
+        <div className={`p-6 border-b border-[#1e293b] flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
+          {!isSidebarCollapsed && (
+            <h2 className="text-lg font-bold text-white flex items-center gap-2 cursor-pointer select-none" onClick={handleTitleClick} title="Click 5 times for a surprise">
+              <Network size={20} className={`text-cyan-400 ${cyberpunkMode ? 'animate-pulse drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]' : ''}`} />
+              <span className="truncate">IoT Simulator</span>
+            </h2>
+          )}
+          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-400 hover:text-white transition-colors">
+            {isSidebarCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
+          </button>
+        </div>
+        <nav className="flex-1 p-4 flex flex-col gap-2">
+          <button onClick={() => setActiveTab('dashboard')} title="Dashboard" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${activeTab === 'dashboard' ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
+            <Router size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Dashboard</span>}
+          </button>
+          <button onClick={() => setActiveTab('comparison')} title="Comparison" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${activeTab === 'comparison' ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
+            <Cable size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Comparison</span>}
+          </button>
+          <div className="flex-1"></div>
+          <button onClick={() => setShowLogsSidebar(!showLogsSidebar)} title="Logs Panel" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${showLogsSidebar ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
+            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+              <Terminal size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Logs Panel</span>}
             </div>
+            {!isSidebarCollapsed && <span className="text-[10px] bg-[#1e293b] px-2 py-0.5 rounded-full">{logs.length}</span>}
+          </button>
+        </nav>
+      </aside>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Greedy Heuristic */}
-              <div className={`p-4 rounded-xl border ${algorithm === 'greedy' ? 'border-blue-500/50 bg-blue-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-sm text-blue-400">1. Greedy Heuristic</span>
-                  {algorithm === 'greedy' && <span className="text-[10px] bg-blue-500/20 text-blue-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
-                </div>
-                <div className="flex flex-col gap-1.5 font-mono text-xs">
-                  <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{greedySlots} slots</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-emerald-400 font-bold">O(V + E) [Instant]</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Local Best Selection</span></div>
-                </div>
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto relative bg-glow-theme">
+        <div className="p-8">
+          <header className="max-w-6xl mx-auto mb-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="bg-[#0B1020] p-1.5 rounded border border-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                <Network size={18} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]" />
               </div>
-
-              {/* Simulated Annealing */}
-              <div className={`p-4 rounded-xl border ${algorithm === 'annealing' ? 'border-purple-500/50 bg-purple-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-sm text-purple-400">2. Simulated Annealing</span>
-                  {algorithm === 'annealing' && <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
-                </div>
-                <div className="flex flex-col gap-1.5 font-mono text-xs">
-                  <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{annealingSlots} slots</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-yellow-500 font-bold">Iterative (Stochastic)</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Probabilistic Escape</span></div>
-                </div>
-              </div>
-
-              {/* Tabu Search */}
-              <div className={`p-4 rounded-xl border ${algorithm === 'tabu' ? 'border-pink-500/50 bg-pink-500/5' : isDark ? 'bg-[#0B1020]/40 border-slate-700/40' : 'bg-slate-100/60 border-slate-200'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-sm text-pink-400">3. Tabu Search</span>
-                  {algorithm === 'tabu' && <span className="text-[10px] bg-pink-500/20 text-pink-300 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Active</span>}
-                </div>
-                <div className="flex flex-col gap-1.5 font-mono text-xs">
-                  <div className="flex justify-between"><span className={theme.textMuted}>Time Slots:</span> <span className="font-bold text-white text-sm">{tabuSlots} slots</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Compute Speed:</span> <span className="text-yellow-500 font-bold">Iterative (Memory-Bound)</span></div>
-                  <div className="flex justify-between"><span className={theme.textMuted}>Optimization Strategy:</span> <span className="text-slate-400">Forbidden Move List</span></div>
-                </div>
-              </div>
+              <span className="text-xs font-medium text-slate-300">
+                IoT Energy Optimisation <span className="text-slate-500 mx-1">·</span> Graph Coloring
+              </span>
             </div>
+            <h1 className="text-5xl font-extrabold text-white mb-5 tracking-tight drop-shadow-sm">
+              Color the network. <span className="text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]">Save the energy.</span>
+            </h1>
+            <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">
+              Compare <span className="text-slate-200 font-medium">Greedy</span>, <span className="text-slate-200 font-medium">Tabu Search</span>, and <span className="text-slate-200 font-medium">Simulated Annealing</span> on dynamically generated IoT topologies. Visualise collisions, delay, and energy waste when scheduling is left to chance.
+            </p>
+          </header>
 
-            {/* Global metrics ribbon */}
-            <div className="mt-6 pt-5 border-t border-slate-800/60 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-xs">
-              <div>
-                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Chaos Collision Rate</div>
-                <div className="text-xl font-black text-red-500 font-mono">{collisionRate}%</div>
+          {activeTab === 'dashboard' && (
+            <div className="max-w-6xl mx-auto pb-20">
+            {paramsSection}
+            {/* Dashboard specifically locks Panel A to Chaos and B to user choice */}
+            <div className="mb-6 flex flex-col gap-3">
+               <div className="flex items-center gap-4">
+                 <label className="text-sm font-medium text-slate-400 whitespace-nowrap">Coloring Algorithm (Optimized Panel):</label>
+                 <div className={`flex flex-1 bg-[#0f172a] rounded-lg p-1 border border-[#1e293b] ${isAnyRunning ? 'opacity-50 pointer-events-none' : ''}`}>
+                   {['greedy', 'tabu', 'sa'].map((algo) => (
+                     <div key={algo} className="flex-1 flex relative">
+                       <button
+                         onClick={() => setApproachB(algo as Approach)}
+                         className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2 ${approachB === algo ? 'bg-[#1e293b] text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-slate-300'}`}
+                       >
+                         {getApproachName(algo as Approach).replace(' Coloring', '')}
+                       </button>
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); setInfoPopup(algo as Approach); }}
+                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-cyan-400 transition-colors bg-[#0f172a] rounded-md opacity-70 hover:opacity-100"
+                         title="Algorithm Info"
+                       >
+                         <Info size={14} />
+                       </button>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <NetworkPanel 
+                title="Chaos Network" subtitle="Unoptimized Random Access" approach="chaos"
+                nodes={nodesA} adjList={adjList} isRunning={runningA} packets={packetsA} collisions={collisionsA} batteryPercent={batteryA}
+                onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
+                onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
+                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+              />
+              <NetworkPanel 
+                title="Optimized Network" subtitle={getApproachName(approachB)} approach={approachB}
+                nodes={nodesB} adjList={adjList} isRunning={runningB} packets={packetsB} collisions={collisionsB} batteryPercent={batteryB}
+                onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
+                onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
+                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+              />
+            </div>
+            {isGenerated && <AnalyticsDashboard data={analyticsData} />}
+          </div>
+        )}
+
+        {activeTab === 'comparison' && (
+          <div className="max-w-6xl mx-auto h-full flex flex-col pb-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Compare Approaches</h2>
+              <p className="text-slate-400 text-sm">Select any two algorithms to compare their performance side by side.</p>
+            </div>
+            {paramsSection}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1 min-h-[500px]">
+              <div className="flex flex-col gap-4">
+                <select value={approachA} onChange={e => setApproachA(e.target.value as Approach)} className="bg-[#0B1020] border border-[#1e293b] text-white rounded-lg p-3 outline-none focus:border-cyan-500">
+                  <option value="chaos">Random Access (Chaos)</option>
+                  <option value="greedy">Greedy Coloring</option>
+                  <option value="tabu">Tabu Search</option>
+                  <option value="sa">Simulated Annealing</option>
+                </select>
+                <NetworkPanel 
+                  title={`Panel A`} subtitle={getApproachName(approachA)} approach={approachA}
+                  nodes={nodesA} adjList={adjList} isRunning={runningA} packets={packetsA} collisions={collisionsA} batteryPercent={batteryA}
+                  onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
+                  onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
+                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                />
               </div>
-              <div>
-                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Network Packet Load</div>
-                <div className="text-xl font-black text-orange-400 font-mono">Chaos: {chaosPackets} <span className="text-slate-500 text-sm">vs</span> Opt: {optPackets}</div>
-              </div>
-              <div>
-                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme.textMuted} mb-1`}>Current Energy Gap</div>
-                <div className="text-emerald-400 font-bold font-mono">+{batteryAdvantage}% Extended Battery</div>
+              <div className="flex flex-col gap-4">
+                <select value={approachB} onChange={e => setApproachB(e.target.value as Approach)} className="bg-[#0B1020] border border-[#1e293b] text-white rounded-lg p-3 outline-none focus:border-cyan-500">
+                  <option value="chaos">Random Access (Chaos)</option>
+                  <option value="greedy">Greedy Coloring</option>
+                  <option value="tabu">Tabu Search</option>
+                  <option value="sa">Simulated Annealing</option>
+                </select>
+                <NetworkPanel 
+                  title={`Panel B`} subtitle={getApproachName(approachB)} approach={approachB}
+                  nodes={nodesB} adjList={adjList} isRunning={runningB} packets={packetsB} collisions={collisionsB} batteryPercent={batteryB}
+                  onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
+                  onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
+                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                />
               </div>
             </div>
           </div>
-        );
-      })()}
+        )}
+        </div>
+      </main>
+
+      {/* Right Logs Sidebar */}
+      {showLogsSidebar && (
+        <aside className="w-80 bg-[#0B1020] border-l border-[#1e293b] flex flex-col h-full shadow-2xl transition-all duration-300">
+          <div className="p-4 border-b border-[#1e293b] flex justify-between items-center bg-[#050b14]">
+            <div className="flex items-center gap-2 text-white font-bold">
+              <FileText size={18} className="text-cyan-400" />
+              <h2>Network Logs</h2>
+            </div>
+            <button onClick={() => setLogs([])} className="px-3 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-slate-300 rounded text-xs border border-[#334155] transition-colors">
+              Clear
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-2">
+            {logs.length === 0 ? (
+              <div className="text-slate-500 text-center py-10 px-4">No logs available. Start simulation to trace.</div>
+            ) : (
+              logs.map(log => (
+                <div key={log.id} className="flex flex-col gap-1 p-2 bg-[#050b14] border border-[#1e293b] rounded-md">
+                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                    <span>{log.timestamp.toLocaleTimeString()}</span>
+                    {log.panel && <span className="bg-[#1e293b] text-slate-300 px-1.5 py-0.5 rounded">PANEL {log.panel}</span>}
+                  </div>
+                  <span className={`${
+                    log.type === 'error' ? 'text-red-400' :
+                    log.type === 'warning' ? 'text-yellow-400' :
+                    log.type === 'success' ? 'text-green-400' :
+                    'text-cyan-400'
+                  }`}>
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
+      )}
+
+      {/* Reset Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-6 shadow-2xl max-w-sm w-full mx-4">
+            <h3 className="text-xl font-bold text-white mb-2">Reset Network?</h3>
+            <p className="text-slate-400 text-sm mb-6">
+              This will clear all nodes, edges, and simulation data. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowResetModal(false)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 bg-[#0f172a] hover:bg-[#1e293b] border border-[#334155] transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmReset} className="px-4 py-2 rounded-lg text-sm font-medium text-red-100 bg-red-600 hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)] transition-colors">
+                Reset Network
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Popup Modal */}
+      {infoPopup && <AlgorithmInfoModal algo={infoPopup} onClose={() => setInfoPopup(null)} />}
     </div>
   );
 }

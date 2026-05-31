@@ -1,6 +1,69 @@
 @import "tailwindcss";
 
 body {
-  background-color: #f8fafc;
-  /* A soft slate background for the dashboard */
+  background-color: #050b14;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.bg-glow-theme {
+  background-color: #050b14;
+  background-image: 
+    radial-gradient(circle at 15% 10%, rgba(6, 182, 212, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 85% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 45%),
+    radial-gradient(circle at 50% 80%, rgba(234, 179, 8, 0.08) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Custom Range Slider Styling */
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  background: transparent;
+}
+
+input[type=range]:focus {
+  outline: none;
+}
+
+/* Track */
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  background: linear-gradient(to right, #06b6d4, #a855f7);
+  border-radius: 4px;
+}
+
+/* Thumb */
+input[type=range]::-webkit-slider-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #06b6d4; /* cyan */
+  cursor: pointer;
+  -webkit-appearance: none;
+  margin-top: -5px;
+  border: 2px solid #050b14;
+  box-shadow: 0 0 0 2px #06b6d4;
+}
+
+input[type=range]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px #06b6d4, 0 0 10px #06b6d4;
+}
+
+/* Scrollbar customization for a dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0B1020;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
 }
