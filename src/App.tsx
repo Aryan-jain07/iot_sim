@@ -479,7 +479,6 @@ export default function App() {
 
   const [nodeCount, setNodeCount] = useState(27);
   const [edgeDensity, setEdgeDensity] = useState(0.16);
-  const [seed, setSeed] = useState(1773);
   const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
   const [isGenerated, setIsGenerated] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -506,7 +505,7 @@ export default function App() {
 
   const handleGenerate = useCallback(() => {
     const radius = calculateInterferenceRadius(edgeDensity);
-    const nodes = generateNodes(nodeCount, CANVAS_WIDTH, CANVAS_HEIGHT, seed);
+    const nodes = generateNodes(nodeCount, CANVAS_WIDTH, CANVAS_HEIGHT);
     const adj = buildAdjacencyList(nodes, radius);
     
     setAdjList(adj);
@@ -532,7 +531,7 @@ export default function App() {
     slotRefA.current = 0; slotRefB.current = 0;
 
     addLog(`Generated new network with ${nodeCount} nodes and ${edgeDensity} edge density.`, 'info');
-  }, [nodeCount, edgeDensity, seed, approachA, approachB, addLog]);
+  }, [nodeCount, edgeDensity, approachA, approachB, addLog]);
 
   const handleConfirmGenerate = () => {
     handleGenerate();
@@ -723,28 +722,19 @@ export default function App() {
         )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-3">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">IoT Nodes</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{nodeCount}</span>
           </div>
           <input type="range" min="5" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-3">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">Edge density</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{edgeDensity}</span>
           </div>
           <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
-        </div>
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-2">
-          <div className="flex justify-between items-center text-sm">
-            <label className="text-slate-400">Random seed</label>
-            <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{seed}</span>
-          </div>
-          <button onClick={() => setSeed(Math.floor(Math.random() * 10000))} disabled={isAnyRunning} className={`bg-[#0f172a] hover:bg-[#1e293b] border border-[#334155] text-white text-sm font-medium py-2 px-2 rounded-lg transition flex items-center justify-center gap-1 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
-            <span>✨</span> Randomize
-          </button>
         </div>
         <div className="flex flex-row gap-3 col-span-1 md:col-span-4 justify-end">
           <button onClick={handleConfirmGenerate} disabled={isAnyRunning} className={`flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-3 rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>

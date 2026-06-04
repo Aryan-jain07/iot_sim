@@ -1,21 +1,13 @@
 import type { IoTNode, Approach, AlgorithmMetrics } from './types';
 
 // 1. Generate Random Nodes
-export function generateNodes(count: number, canvasWidth: number, canvasHeight: number, seed: number): IoTNode[] {
-  // Simple seeded PRNG for consistent topology generation
-  const random = () => {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-
+export function generateNodes(count: number, canvasWidth: number, canvasHeight: number): IoTNode[] {
   const nodes: IoTNode[] = [];
   for (let i = 0; i < count; i++) {
     nodes.push({
       id: `Node_${i + 1}`,
-      x: Math.floor(random() * (canvasWidth - 40)) + 20,
-      y: Math.floor(random() * (canvasHeight - 40)) + 20,
+      x: Math.floor(Math.random() * (canvasWidth - 40)) + 20,
+      y: Math.floor(Math.random() * (canvasHeight - 40)) + 20,
       battery: 10000,
       color: -1,     // -1 means no time slot assigned yet
       state: 'IDLE'
