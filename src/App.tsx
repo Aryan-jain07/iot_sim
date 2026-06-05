@@ -41,10 +41,11 @@ interface SimulationCanvasProps {
   selectedNode?: string | null;
   onNodeRightClick?: (id: string) => void;
   cyberpunkMode?: boolean;
+  speedMultiplier?: number;
 }
 
 function SimulationCanvas({ 
-  nodes, adjList, onNodeMove, onNodeMoveEnd, approach, isRunning, editMode, selectedNode, onNodeRightClick, cyberpunkMode 
+  nodes, adjList, onNodeMove, onNodeMoveEnd, approach, isRunning, editMode, selectedNode, onNodeRightClick, cyberpunkMode, speedMultiplier = 1
 }: SimulationCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -117,9 +118,9 @@ function SimulationCanvas({
           const uniqueKey = `packet-${node.id}-${neighborId}-${Date.now()}`;
           return (
             <circle key={uniqueKey} r={isCollision ? "4" : "3"} fill={packetColor} className="pointer-events-none" style={{ filter: `drop-shadow(0 0 5px ${packetColor})` }}>
-              <animate attributeName="cx" values={`${node.x};${target.x}`} dur="0.6s" fill="freeze" />
-              <animate attributeName="cy" values={`${node.y};${target.y}`} dur="0.6s" fill="freeze" />
-              <animate attributeName="opacity" values="1;0" dur="0.6s" fill="freeze" />
+              <animate attributeName="cx" values={`${node.x};${target.x}`} dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
+              <animate attributeName="cy" values={`${node.y};${target.y}`} dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
+              <animate attributeName="opacity" values="1;0" dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
             </circle>
           );
         });
@@ -166,7 +167,7 @@ function SimulationCanvas({
 
 function NetworkPanelBase({
   title, subtitle, nodes, adjList, isRunning, packets, collisions, batteryPercent,
-  onStart, onStop, onNodeMove, onNodeMoveEnd, onNodeRightClick, selectedNode, editMode, approach, showControls = true, cyberpunkMode
+  onStart, onStop, onNodeMove, onNodeMoveEnd, onNodeRightClick, selectedNode, editMode, approach, showControls = true, cyberpunkMode, speedMultiplier = 1
 }: {
   title: string; subtitle: string;
   nodes: IoTNode[]; adjList: Map<string, string[]>;
@@ -180,6 +181,7 @@ function NetworkPanelBase({
   approach: Approach;
   showControls?: boolean;
   cyberpunkMode?: boolean;
+  speedMultiplier?: number;
 }) {
   const isChaos = approach === 'chaos';
 
@@ -222,6 +224,7 @@ function NetworkPanelBase({
           selectedNode={selectedNode}
           onNodeRightClick={onNodeRightClick}
           cyberpunkMode={cyberpunkMode}
+          speedMultiplier={speedMultiplier}
         />
 
         <div className="grid grid-cols-3 gap-3 mt-4 text-center">
@@ -257,7 +260,8 @@ const NetworkPanel = React.memo(NetworkPanelBase, (prev, next) => {
          prev.selectedNode === next.selectedNode &&
          prev.title === next.title &&
          prev.subtitle === next.subtitle &&
-         prev.cyberpunkMode === next.cyberpunkMode;
+         prev.cyberpunkMode === next.cyberpunkMode &&
+         prev.speedMultiplier === next.speedMultiplier;
 });
 
 function AlgorithmDiagram({ algo }: { algo: string }) {
@@ -479,6 +483,7 @@ export default function App() {
 
   const [nodeCount, setNodeCount] = useState(27);
   const [edgeDensity, setEdgeDensity] = useState(0.16);
+  const [speedMultiplier, setSpeedMultiplier] = useState(1);
   const [adjList, setAdjList] = useState<Map<string, string[]>>(new Map());
   const [isGenerated, setIsGenerated] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -637,7 +642,7 @@ export default function App() {
     running: boolean, approach: Approach, setNodes: React.Dispatch<React.SetStateAction<IoTNode[]>>,
     adjList: Map<string, string[]>, setCollisions: React.Dispatch<React.SetStateAction<number>>,
     setPackets: React.Dispatch<React.SetStateAction<number>>, maxSlot: number, slotRef: React.MutableRefObject<number>,
-    panelId: 'A' | 'B'
+    panelId: 'A' | 'B', speedMultiplier: number
   ) => {
     useEffect(() => {
       if (!running) return;
@@ -695,13 +700,13 @@ export default function App() {
 
           return updated;
         });
-      }, 600);
+      }, 600 / speedMultiplier);
       return () => clearInterval(interval);
-    }, [running, approach, adjList, maxSlot, panelId]);
+    }, [running, approach, adjList, maxSlot, panelId, speedMultiplier]);
   };
 
-  useSimulationLoop(runningA, approachA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A');
-  useSimulationLoop(runningB, approachB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B');
+  useSimulationLoop(runningA, approachA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A', speedMultiplier);
+  useSimulationLoop(runningB, approachB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B', speedMultiplier);
 
   const batteryA = nodesA.length > 0 ? (nodesA.reduce((s, n) => s + n.battery, 0) / nodesA.length / MAX_BATTERY) * 100 : 0;
   const batteryB = nodesB.length > 0 ? (nodesB.reduce((s, n) => s + n.battery, 0) / nodesB.length / MAX_BATTERY) * 100 : 0;
@@ -736,8 +741,15 @@ export default function App() {
           </div>
           <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-        <div className="flex flex-row gap-3 col-span-1 md:col-span-4 justify-end">
-          <button onClick={handleConfirmGenerate} disabled={isAnyRunning} className={`flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-3 rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
+          <div className="flex justify-between items-center text-sm">
+            <label className="text-slate-400">Simulation Speed</label>
+            <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{speedMultiplier}x</span>
+          </div>
+          <input type="range" min="0.5" max="5" step="0.5" value={speedMultiplier} onChange={(e) => setSpeedMultiplier(Number(e.target.value))} />
+        </div>
+        <div className="flex flex-row gap-3 col-span-1 md:col-span-12 justify-end mt-2">
+          <button onClick={handleConfirmGenerate} disabled={isAnyRunning} className={`bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
             <Zap size={16} /> {isGenerated ? 'Regenerate' : 'Generate & Analyze'}
           </button>
           {isGenerated && (
@@ -841,14 +853,14 @@ export default function App() {
                 nodes={nodesA} adjList={adjList} isRunning={runningA} packets={packetsA} collisions={collisionsA} batteryPercent={batteryA}
                 onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
-                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
               />
               <NetworkPanel 
                 title="Optimized Network" subtitle={getApproachName(approachB)} approach={approachB}
                 nodes={nodesB} adjList={adjList} isRunning={runningB} packets={packetsB} collisions={collisionsB} batteryPercent={batteryB}
                 onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
-                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
               />
             </div>
             {isGenerated && <AnalyticsDashboard data={analyticsData} />}
@@ -875,7 +887,7 @@ export default function App() {
                   nodes={nodesA} adjList={adjList} isRunning={runningA} packets={packetsA} collisions={collisionsA} batteryPercent={batteryA}
                   onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
                   onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
-                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
                 />
               </div>
               <div className="flex flex-col gap-4">
@@ -890,7 +902,7 @@ export default function App() {
                   nodes={nodesB} adjList={adjList} isRunning={runningB} packets={packetsB} collisions={collisionsB} batteryPercent={batteryB}
                   onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
                   onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
-                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode}
+                  onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
                 />
               </div>
             </div>
