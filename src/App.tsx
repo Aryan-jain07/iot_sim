@@ -21,6 +21,26 @@ function getApproachName(app: Approach) {
   }
 }
 
+const getShortestPath = (sourceId: string, sinkId: string, adjList: Map<string, string[]>): string[] | null => {
+  if (sourceId === sinkId) return [sourceId];
+  const queue = [[sourceId]];
+  const visited = new Set([sourceId]);
+
+  while (queue.length > 0) {
+    const path = queue.shift()!;
+    const node = path[path.length - 1];
+    const neighbors = adjList.get(node) || [];
+    for (const neighbor of neighbors) {
+      if (neighbor === sinkId) return [...path, neighbor];
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push([...path, neighbor]);
+      }
+    }
+  }
+  return null;
+};
+
 const applyColoring = (nodes: IoTNode[], adj: Map<string, string[]>, algo: Approach) => {
   if (algo === 'chaos') return nodes.map(n => ({ ...n, color: -1 }));
   switch (algo) {
@@ -42,10 +62,14 @@ interface SimulationCanvasProps {
   onNodeRightClick?: (id: string) => void;
   cyberpunkMode?: boolean;
   speedMultiplier?: number;
+  sourceNodeId?: string | null;
+  sinkNodeId?: string | null;
+  route?: string[] | null;
+  onNodeSelect?: (id: string) => void;
 }
 
 function SimulationCanvas({ 
-  nodes, adjList, onNodeMove, onNodeMoveEnd, approach, isRunning, editMode, selectedNode, onNodeRightClick, cyberpunkMode, speedMultiplier = 1
+  nodes, adjList, onNodeMove, onNodeMoveEnd, approach, isRunning, editMode, selectedNode, onNodeRightClick, cyberpunkMode, speedMultiplier = 1, sourceNodeId, sinkNodeId, route, onNodeSelect
 }: SimulationCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -53,6 +77,7 @@ function SimulationCanvas({
 
   const handlePointerDown = (e: React.PointerEvent, id: string) => {
     if (isRunning) return;
+    if (onNodeSelect) onNodeSelect(id);
     setDraggingId(id);
     (e.target as Element).setPointerCapture(e.pointerId);
     e.stopPropagation();
@@ -107,20 +132,56 @@ function SimulationCanvas({
         })
       )}
 
+      {route && route.length > 1 && (
+        <path
+          d={`M ${route.map(id => {
+            const n = nodeMap.get(id);
+            return n ? `${n.x},${n.y}` : '';
+          }).join(' L ')}`}
+          fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 6"
+          className={`opacity-40 pointer-events-none ${isRunning ? 'animate-pulse' : ''}`}
+        />
+      )}
+
       {isRunning && nodes.map(node => {
         if (node.state !== 'TRANSMIT' && node.state !== 'COLLISION') return null;
         const isCollision = node.state === 'COLLISION';
-        const packetColor = isCollision ? '#ef4444' : '#facc15';
+
+        let isRoutedHopBase = false;
+        let nextHopId: string | null = null;
+
+        if (route && !isCollision) {
+           const myIdx = route.indexOf(node.id);
+           if (myIdx !== -1) {
+             const carrier = nodes.find(n => n.hasDataPacket);
+             if (carrier) {
+               const carrierIdx = route.indexOf(carrier.id);
+               if (myIdx === carrierIdx - 1) {
+                 isRoutedHopBase = true;
+                 nextHopId = carrier.id;
+               } else if (carrierIdx === 0 && myIdx === route.length - 2) {
+                 // The node before sink transmitted, packet reached sink and wrapped to source
+                 isRoutedHopBase = true;
+                 nextHopId = route[route.length - 1];
+               }
+             }
+           }
+        }
 
         return (adjList.get(node.id) || []).map(neighborId => {
           const target = nodeMap.get(neighborId);
           if (!target) return null;
+
+          const isRoutedHop = isRoutedHopBase && neighborId === nextHopId;
+          const packetColor = isCollision ? '#ef4444' : (isRoutedHop ? '#10b981' : '#facc15');
+          const packetSize = isRoutedHop ? "6" : (isCollision ? "4" : "3");
+          const opacity = isRoutedHop ? "1" : "0.5";
+
           const uniqueKey = `packet-${node.id}-${neighborId}-${Date.now()}`;
           return (
-            <circle key={uniqueKey} r={isCollision ? "4" : "3"} fill={packetColor} className="pointer-events-none" style={{ filter: `drop-shadow(0 0 5px ${packetColor})` }}>
-              <animate attributeName="cx" values={`${node.x};${target.x}`} dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
-              <animate attributeName="cy" values={`${node.y};${target.y}`} dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
-              <animate attributeName="opacity" values="1;0" dur={`${0.6 / speedMultiplier}s`} fill="freeze" />
+            <circle key={uniqueKey} cx={node.x} cy={node.y} r={packetSize} fill={packetColor} className="pointer-events-none" style={{ filter: `drop-shadow(0 0 5px ${packetColor})`, opacity }}>
+              <animate attributeName="cx" values={`${node.x};${target.x}`} dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
+              <animate attributeName="cy" values={`${node.y};${target.y}`} dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
             </circle>
           );
         });
@@ -146,8 +207,51 @@ function SimulationCanvas({
             
             {isRunning && node.state === 'TRANSMIT' &&
               <circle cx={node.x} cy={node.y} r="18" className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
-            {isRunning && node.state === 'COLLISION' &&
-              <circle cx={node.x} cy={node.y} r="18" className="fill-red-500/40 animate-ping opacity-75 pointer-events-none" />}
+            {isRunning && node.state === 'COLLISION' && (
+              <g className="pointer-events-none">
+                <circle cx={node.x} cy={node.y} r="10" fill="none" stroke="#ef4444" strokeWidth="4">
+                   <animate attributeName="r" values="10;30" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
+                   <animate attributeName="opacity" values="1;0" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
+                </circle>
+                <circle cx={node.x} cy={node.y} r="5" fill="#ef4444">
+                   <animate attributeName="r" values="5;15" dur={`${0.2 / speedMultiplier}s`} fill="freeze" />
+                   <animate attributeName="opacity" values="1;0" dur={`${0.2 / speedMultiplier}s`} fill="freeze" />
+                </circle>
+                <path d={`M ${node.x - 8} ${node.y - 8} L ${node.x + 8} ${node.y + 8} M ${node.x + 8} ${node.y - 8} L ${node.x - 8} ${node.y + 8}`} stroke="#fca5a5" strokeWidth="3" strokeLinecap="round">
+                   <animate attributeName="opacity" values="1;0" dur={`${0.5 / speedMultiplier}s`} fill="freeze" />
+                </path>
+              </g>
+            )}
+            
+            {node.id === sourceNodeId && <circle cx={node.x} cy={node.y} r="15" fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />}
+            {node.id === sinkNodeId && <circle cx={node.x} cy={node.y} r="15" fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />}
+            
+            {node.hasDataPacket && route && (() => {
+              let isReceivingThisTick = false;
+              if (isRunning) {
+                const myIdx = route.indexOf(node.id);
+                if (myIdx !== -1) {
+                  let prevNodeIdx = myIdx - 1;
+                  if (myIdx === 0) prevNodeIdx = route.length - 2;
+                  if (prevNodeIdx >= 0 && prevNodeIdx < route.length) {
+                    const prevNodeId = route[prevNodeIdx];
+                    const prevNode = nodes.find(n => n.id === prevNodeId);
+                    if (prevNode && prevNode.state === 'TRANSMIT') {
+                      isReceivingThisTick = true;
+                    }
+                  }
+                }
+              }
+              return (
+                <g className="pointer-events-none">
+                  {isReceivingThisTick && (
+                    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.99;1" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
+                  )}
+                  <circle cx={node.x} cy={node.y} r="12" fill="none" stroke="#10b981" strokeWidth="4" className={`${isRunning && !isReceivingThisTick ? 'animate-ping' : ''}`} style={{ filter: 'drop-shadow(0 0 8px #10b981)' }} />
+                  <circle cx={node.x} cy={node.y} r="6" fill="#10b981" style={{ filter: 'drop-shadow(0 0 5px #10b981)' }} />
+                </g>
+              );
+            })()}
 
             {isSelected && (
               <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />
@@ -167,7 +271,7 @@ function SimulationCanvas({
 
 function NetworkPanelBase({
   title, subtitle, nodes, adjList, isRunning, packets, collisions, batteryPercent,
-  onStart, onStop, onNodeMove, onNodeMoveEnd, onNodeRightClick, selectedNode, editMode, approach, showControls = true, cyberpunkMode, speedMultiplier = 1
+  onStart, onStop, onNodeMove, onNodeMoveEnd, onNodeRightClick, selectedNode, editMode, approach, showControls = true, cyberpunkMode, speedMultiplier = 1, sourceNodeId, sinkNodeId, route, onNodeSelect
 }: {
   title: string; subtitle: string;
   nodes: IoTNode[]; adjList: Map<string, string[]>;
@@ -182,6 +286,10 @@ function NetworkPanelBase({
   showControls?: boolean;
   cyberpunkMode?: boolean;
   speedMultiplier?: number;
+  sourceNodeId?: string | null;
+  sinkNodeId?: string | null;
+  route?: string[] | null;
+  onNodeSelect?: (id: string) => void;
 }) {
   const isChaos = approach === 'chaos';
 
@@ -225,6 +333,10 @@ function NetworkPanelBase({
           onNodeRightClick={onNodeRightClick}
           cyberpunkMode={cyberpunkMode}
           speedMultiplier={speedMultiplier}
+          sourceNodeId={sourceNodeId}
+          sinkNodeId={sinkNodeId}
+          route={route}
+          onNodeSelect={onNodeSelect}
         />
 
         <div className="grid grid-cols-3 gap-3 mt-4 text-center">
@@ -261,7 +373,10 @@ const NetworkPanel = React.memo(NetworkPanelBase, (prev, next) => {
          prev.title === next.title &&
          prev.subtitle === next.subtitle &&
          prev.cyberpunkMode === next.cyberpunkMode &&
-         prev.speedMultiplier === next.speedMultiplier;
+         prev.speedMultiplier === next.speedMultiplier &&
+         prev.sourceNodeId === next.sourceNodeId &&
+         prev.sinkNodeId === next.sinkNodeId &&
+         prev.route === next.route;
 });
 
 function AlgorithmDiagram({ algo }: { algo: string }) {
@@ -459,6 +574,9 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [cyberpunkMode, setCyberpunkMode] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<AlgorithmMetrics[]>([]);
+  const [sourceNodeId, setSourceNodeId] = useState<string | null>(null);
+  const [sinkNodeId, setSinkNodeId] = useState<string | null>(null);
+  const [route, setRoute] = useState<string[] | null>(null);
   const clickCountRef = useRef(0);
   const clickTimeoutRef = useRef<number | undefined>(undefined);
 
@@ -481,6 +599,8 @@ export default function App() {
     });
   }, []);
 
+
+
   const [nodeCount, setNodeCount] = useState(27);
   const [edgeDensity, setEdgeDensity] = useState(0.16);
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
@@ -489,6 +609,14 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
+
+  useEffect(() => {
+    if (sourceNodeId && sinkNodeId) {
+      setRoute(getShortestPath(sourceNodeId, sinkNodeId, adjList));
+    } else {
+      setRoute(null);
+    }
+  }, [sourceNodeId, sinkNodeId, adjList]);
 
   const [approachA, setApproachA] = useState<Approach>('chaos');
   const [nodesA, setNodesA] = useState<IoTNode[]>([]);
@@ -533,6 +661,7 @@ export default function App() {
     setCollisionsA(0); setCollisionsB(0);
     setPacketsA(0); setPacketsB(0);
     setEditMode(false); setSelectedNode(null);
+    setSourceNodeId(null); setSinkNodeId(null);
     slotRefA.current = 0; slotRefB.current = 0;
 
     addLog(`Generated new network with ${nodeCount} nodes and ${edgeDensity} edge density.`, 'info');
@@ -551,6 +680,7 @@ export default function App() {
     setCollisionsA(0); setCollisionsB(0);
     setPacketsA(0); setPacketsB(0);
     setEditMode(false); setSelectedNode(null);
+    setSourceNodeId(null); setSinkNodeId(null);
     setIsGenerated(false); setShowResetModal(false);
     addLog('Network cleared.', 'warning');
   };
@@ -642,16 +772,20 @@ export default function App() {
     running: boolean, approach: Approach, setNodes: React.Dispatch<React.SetStateAction<IoTNode[]>>,
     adjList: Map<string, string[]>, setCollisions: React.Dispatch<React.SetStateAction<number>>,
     setPackets: React.Dispatch<React.SetStateAction<number>>, maxSlot: number, slotRef: React.MutableRefObject<number>,
-    panelId: 'A' | 'B', speedMultiplier: number
+    panelId: 'A' | 'B', speedMultiplier: number, currentRoute: string[] | null
   ) => {
     useEffect(() => {
-      if (!running) return;
+      if (!running) {
+        setNodes(curr => curr.map(n => ({ ...n, state: 'IDLE' as NodeState })));
+        return;
+      }
       let ticks = 0;
       const interval = setInterval(() => {
         ticks++;
         setNodes(currentNodes => {
           let tickCollisions = 0, tickSuccesses = 0;
           let updated: IoTNode[];
+          const successfulTransmitters = new Set<string>();
 
           if (approach === 'chaos') {
             const attempting = new Set(currentNodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id));
@@ -662,15 +796,16 @@ export default function App() {
             });
 
             updated = currentNodes.map(node => {
-              if (node.battery <= 0) return { ...node, state: 'SLEEP' as NodeState };
+              if (node.battery <= 0) return { ...node, state: 'SLEEP' as NodeState, hasDataPacket: node.hasDataPacket };
               if (collided.has(node.id)) {
                 tickCollisions++;
-                return { ...node, state: 'COLLISION' as NodeState, battery: Math.max(0, node.battery - 300) };
+                return { ...node, state: 'COLLISION' as NodeState, battery: Math.max(0, node.battery - 300), hasDataPacket: node.hasDataPacket };
               } else if (attempting.has(node.id)) {
                 tickSuccesses++;
-                return { ...node, state: 'TRANSMIT' as NodeState, battery: Math.max(0, node.battery - 150) };
+                successfulTransmitters.add(node.id);
+                return { ...node, state: 'TRANSMIT' as NodeState, battery: Math.max(0, node.battery - 150), hasDataPacket: node.hasDataPacket };
               }
-              return { ...node, state: 'IDLE' as NodeState, battery: Math.max(0, node.battery - 50) };
+              return { ...node, state: 'IDLE' as NodeState, battery: Math.max(0, node.battery - 50), hasDataPacket: node.hasDataPacket };
             });
             tickCollisions = Math.floor(tickCollisions / 2);
           } else {
@@ -679,14 +814,42 @@ export default function App() {
 
             updated = currentNodes.map(node => {
               const transmitting = node.color === nextSlot && node.battery > 0;
-              if (transmitting) tickSuccesses++;
+              if (transmitting) {
+                tickSuccesses++;
+                successfulTransmitters.add(node.id);
+              }
               const drain = transmitting ? 150 : (node.battery > 0 ? 5 : 0);
               return {
                 ...node,
                 battery: Math.max(0, node.battery - drain),
                 state: (transmitting ? 'TRANSMIT' : 'SLEEP') as NodeState,
+                hasDataPacket: node.hasDataPacket
               };
             });
+          }
+
+          if (currentRoute && currentRoute.length > 0) {
+             const carrier = updated.find(n => n.hasDataPacket);
+             if (carrier) {
+                if (successfulTransmitters.has(carrier.id)) {
+                    const routeIndex = currentRoute.indexOf(carrier.id);
+                    if (routeIndex !== -1 && routeIndex < currentRoute.length - 1) {
+                        const nextHopId = currentRoute[routeIndex + 1];
+                        carrier.hasDataPacket = false;
+                        const nextHopNode = updated.find(n => n.id === nextHopId);
+                        if (nextHopNode) nextHopNode.hasDataPacket = true;
+                    } else if (routeIndex === currentRoute.length - 1) {
+                        carrier.hasDataPacket = false;
+                        const sourceNode = updated.find(n => n.id === currentRoute[0]);
+                        if (sourceNode) sourceNode.hasDataPacket = true;
+                    }
+                }
+             } else {
+                const sourceNode = updated.find(n => n.id === currentRoute[0]);
+                if (sourceNode) sourceNode.hasDataPacket = true;
+             }
+          } else {
+             updated.forEach(n => n.hasDataPacket = false);
           }
 
           setCollisions(p => p + tickCollisions);
@@ -702,11 +865,11 @@ export default function App() {
         });
       }, 600 / speedMultiplier);
       return () => clearInterval(interval);
-    }, [running, approach, adjList, maxSlot, panelId, speedMultiplier]);
+    }, [running, approach, adjList, maxSlot, panelId, speedMultiplier, currentRoute]);
   };
 
-  useSimulationLoop(runningA, approachA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A', speedMultiplier);
-  useSimulationLoop(runningB, approachB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B', speedMultiplier);
+  useSimulationLoop(runningA, approachA, setNodesA, adjList, setCollisionsA, setPacketsA, maxSlotA, slotRefA, 'A', speedMultiplier, route);
+  useSimulationLoop(runningB, approachB, setNodesB, adjList, setCollisionsB, setPacketsB, maxSlotB, slotRefB, 'B', speedMultiplier, route);
 
   const batteryA = nodesA.length > 0 ? (nodesA.reduce((s, n) => s + n.battery, 0) / nodesA.length / MAX_BATTERY) * 100 : 0;
   const batteryB = nodesB.length > 0 ? (nodesB.reduce((s, n) => s + n.battery, 0) / nodesB.length / MAX_BATTERY) * 100 : 0;
@@ -749,6 +912,19 @@ export default function App() {
           <input type="range" min="0.5" max="5" step="0.5" value={speedMultiplier} onChange={(e) => setSpeedMultiplier(Number(e.target.value))} />
         </div>
         <div className="flex flex-row gap-3 col-span-1 md:col-span-12 justify-end mt-2">
+          {selectedNode && (
+            <div className="flex-1 flex gap-2 items-center bg-purple-900/10 px-3 py-2 rounded-lg border border-purple-500/20 mr-auto">
+               <span className="text-purple-300 font-medium text-xs">Node {selectedNode.replace('Node_', '')} selected:</span>
+               <button onClick={() => setSourceNodeId(selectedNode)} className={`text-xs px-2 py-1 rounded font-bold transition-colors ${sourceNodeId === selectedNode ? 'bg-green-600 text-white' : 'bg-[#0f172a] text-green-400 hover:bg-[#1e293b] border border-green-800'}`}>Set Source</button>
+               <button onClick={() => setSinkNodeId(selectedNode)} className={`text-xs px-2 py-1 rounded font-bold transition-colors ${sinkNodeId === selectedNode ? 'bg-blue-600 text-white' : 'bg-[#0f172a] text-blue-400 hover:bg-[#1e293b] border border-blue-800'}`}>Set Sink</button>
+               {(sourceNodeId === selectedNode || sinkNodeId === selectedNode) && (
+                 <button onClick={() => {
+                   if (sourceNodeId === selectedNode) setSourceNodeId(null);
+                   if (sinkNodeId === selectedNode) setSinkNodeId(null);
+                 }} className="text-[10px] px-2 py-1 rounded font-bold bg-[#0f172a] text-slate-400 hover:text-white transition-colors ml-2 border border-[#334155]">Clear</button>
+               )}
+            </div>
+          )}
           <button onClick={handleConfirmGenerate} disabled={isAnyRunning} className={`bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 ${isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
             <Zap size={16} /> {isGenerated ? 'Regenerate' : 'Generate & Analyze'}
           </button>
@@ -854,6 +1030,7 @@ export default function App() {
                 onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                 onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
+                sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
               />
               <NetworkPanel 
                 title="Optimized Network" subtitle={getApproachName(approachB)} approach={approachB}
@@ -861,6 +1038,7 @@ export default function App() {
                 onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                 onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
+                sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
               />
             </div>
             {isGenerated && <AnalyticsDashboard data={analyticsData} />}
@@ -888,6 +1066,7 @@ export default function App() {
                   onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
                   onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                   onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
+                  sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
                 />
               </div>
               <div className="flex flex-col gap-4">
@@ -903,6 +1082,7 @@ export default function App() {
                   onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
                   onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                   onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
+                  sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
                 />
               </div>
             </div>

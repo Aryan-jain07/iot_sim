@@ -9,6 +9,7 @@ export interface IoTNode {
     battery: number;   // Current energy level
     color: number;     // Assigned Time Slot (-1 means unassigned)
     state: NodeState;  // Current action in the simulation loop
+    hasDataPacket?: boolean; // Holds the routed data packet
 }
 
 export type Approach = 'chaos' | 'greedy' | 'tabu' | 'sa';
