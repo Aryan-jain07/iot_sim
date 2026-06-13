@@ -67,3 +67,29 @@ input[type=range]:focus::-webkit-slider-thumb {
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
+
+@keyframes traverse-packet {
+  0% { transform: translate(var(--startX), var(--startY)); }
+  100% { transform: translate(var(--endX), var(--endY)); }
+}
+
+@keyframes explode-ring {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+@keyframes explode-core {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+@keyframes explode-x {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes receive-packet {
+  0% { opacity: 0; }
+  99% { opacity: 0; }
+  100% { opacity: 1; }
+}

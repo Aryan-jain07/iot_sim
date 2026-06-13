@@ -138,12 +138,13 @@ function SimulationCanvas({
             const n = nodeMap.get(id);
             return n ? `${n.x},${n.y}` : '';
           }).join(' L ')}`}
-          fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 6"
-          className={`opacity-40 pointer-events-none ${isRunning ? 'animate-pulse' : ''}`}
+          fill="none" stroke="#10b981" strokeWidth="5" strokeDasharray="8 8"
+          className={`pointer-events-none ${isRunning ? 'animate-pulse' : ''}`}
+          style={{ filter: 'drop-shadow(0 0 10px #10b981)' }}
         />
       )}
 
-      {isRunning && nodes.map(node => {
+      {nodes.map(node => {
         if (node.state !== 'TRANSMIT' && node.state !== 'COLLISION') return null;
         const isCollision = node.state === 'COLLISION';
 
@@ -177,12 +178,26 @@ function SimulationCanvas({
           const packetSize = isRoutedHop ? "6" : (isCollision ? "4" : "3");
           const opacity = isRoutedHop ? "1" : "0.5";
 
-          const uniqueKey = `packet-${node.id}-${neighborId}-${Date.now()}`;
+          const uniqueKey = `packet-${node.id}-${neighborId}-${node.battery}`;
           return (
-            <circle key={uniqueKey} cx={node.x} cy={node.y} r={packetSize} fill={packetColor} className="pointer-events-none" style={{ filter: `drop-shadow(0 0 5px ${packetColor})`, opacity }}>
-              <animate attributeName="cx" values={`${node.x};${target.x}`} dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
-              <animate attributeName="cy" values={`${node.y};${target.y}`} dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
-            </circle>
+            <circle 
+              key={uniqueKey} 
+              cx="0" 
+              cy="0" 
+              r={packetSize} 
+              fill={packetColor} 
+              className="pointer-events-none" 
+              style={{ 
+                filter: `drop-shadow(0 0 5px ${packetColor})`, 
+                opacity,
+                '--startX': `${node.x}px`,
+                '--startY': `${node.y}px`,
+                '--endX': `${target.x}px`,
+                '--endY': `${target.y}px`,
+                animation: `traverse-packet ${0.4 / speedMultiplier}s linear forwards`,
+                animationPlayState: isRunning ? 'running' : 'paused'
+              } as React.CSSProperties} 
+            />
           );
         });
       })}
@@ -205,21 +220,15 @@ function SimulationCanvas({
              className={isRunning ? '' : 'cursor-pointer'} 
              style={{ touchAction: 'none' }}>
             
-            {isRunning && node.state === 'TRANSMIT' &&
-              <circle cx={node.x} cy={node.y} r="18" className="fill-yellow-400/20 animate-ping opacity-60 pointer-events-none" />}
-            {isRunning && node.state === 'COLLISION' && (
-              <g className="pointer-events-none">
-                <circle cx={node.x} cy={node.y} r="10" fill="none" stroke="#ef4444" strokeWidth="4">
-                   <animate attributeName="r" values="10;30" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
-                   <animate attributeName="opacity" values="1;0" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
-                </circle>
-                <circle cx={node.x} cy={node.y} r="5" fill="#ef4444">
-                   <animate attributeName="r" values="5;15" dur={`${0.2 / speedMultiplier}s`} fill="freeze" />
-                   <animate attributeName="opacity" values="1;0" dur={`${0.2 / speedMultiplier}s`} fill="freeze" />
-                </circle>
-                <path d={`M ${node.x - 8} ${node.y - 8} L ${node.x + 8} ${node.y + 8} M ${node.x + 8} ${node.y - 8} L ${node.x - 8} ${node.y + 8}`} stroke="#fca5a5" strokeWidth="3" strokeLinecap="round">
-                   <animate attributeName="opacity" values="1;0" dur={`${0.5 / speedMultiplier}s`} fill="freeze" />
-                </path>
+            {/* Removed the expanding yellow ping animation based on user request */}
+            {node.state === 'COLLISION' && (
+              <g className="pointer-events-none" style={{ filter: 'drop-shadow(0 0 15px #ef4444) drop-shadow(0 0 5px #ef4444)' }}>
+                <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#ef4444" strokeWidth="5"
+                   style={{ transformOrigin: `${node.x}px ${node.y}px`, animation: `explode-ring ${0.5 / speedMultiplier}s ease-out forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
+                <circle cx={node.x} cy={node.y} r="7" fill="#ef4444"
+                   style={{ transformOrigin: `${node.x}px ${node.y}px`, animation: `explode-core ${0.3 / speedMultiplier}s ease-out forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
+                <path d={`M ${node.x - 10} ${node.y - 10} L ${node.x + 10} ${node.y + 10} M ${node.x + 10} ${node.y - 10} L ${node.x - 10} ${node.y + 10}`} stroke="#ffffff" strokeWidth="4" strokeLinecap="round"
+                   style={{ animation: `explode-x ${0.5 / speedMultiplier}s forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
               </g>
             )}
             
@@ -243,11 +252,8 @@ function SimulationCanvas({
                 }
               }
               return (
-                <g className="pointer-events-none">
-                  {isReceivingThisTick && (
-                    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.99;1" dur={`${0.4 / speedMultiplier}s`} fill="freeze" />
-                  )}
-                  <circle cx={node.x} cy={node.y} r="12" fill="none" stroke="#10b981" strokeWidth="4" className={`${isRunning && !isReceivingThisTick ? 'animate-ping' : ''}`} style={{ filter: 'drop-shadow(0 0 8px #10b981)' }} />
+                <g className="pointer-events-none" style={isReceivingThisTick ? { animation: `receive-packet ${0.4 / speedMultiplier}s forwards`, animationPlayState: isRunning ? 'running' : 'paused' } : {}}>
+                  <circle cx={node.x} cy={node.y} r="12" fill="none" stroke="#10b981" strokeWidth="4" style={{ filter: 'drop-shadow(0 0 8px #10b981)' }} />
                   <circle cx={node.x} cy={node.y} r="6" fill="#10b981" style={{ filter: 'drop-shadow(0 0 5px #10b981)' }} />
                 </g>
               );
@@ -776,7 +782,6 @@ export default function App() {
   ) => {
     useEffect(() => {
       if (!running) {
-        setNodes(curr => curr.map(n => ({ ...n, state: 'IDLE' as NodeState })));
         return;
       }
       let ticks = 0;
@@ -909,7 +914,7 @@ export default function App() {
             <label className="text-slate-400">Simulation Speed</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{speedMultiplier}x</span>
           </div>
-          <input type="range" min="0.5" max="5" step="0.5" value={speedMultiplier} onChange={(e) => setSpeedMultiplier(Number(e.target.value))} />
+          <input type="range" min="0.1" max="5" step="0.1" value={speedMultiplier} onChange={(e) => setSpeedMultiplier(Number(e.target.value))} />
         </div>
         <div className="flex flex-row gap-3 col-span-1 md:col-span-12 justify-end mt-2">
           {selectedNode && (
