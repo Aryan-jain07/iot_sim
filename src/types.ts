@@ -1,6 +1,6 @@
 // src/types.ts
 
-export type NodeState = 'SLEEP' | 'IDLE' | 'TRANSMIT' | 'COLLISION';
+export type NodeState = 'SLEEP' | 'IDLE' | 'TRANSMIT' | 'COLLISION' | 'FAILED_TX';
 
 export interface IoTNode {
     id: string;

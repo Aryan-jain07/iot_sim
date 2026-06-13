@@ -252,22 +252,37 @@ export function runFastForwardAnalytics(
     for (let t = 0; t < TICKS; t++) {
       if (approach === 'chaos') {
         const attempting = new Set(nodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id));
-        const collided = new Set<string>();
-        attempting.forEach(id => {
-          totalAttempts++;
-          const neighbors = adjList.get(id) || [];
-          if (neighbors.some(nId => attempting.has(nId))) collided.add(id);
+        const collisionAt = new Set<string>();
+        const failedTransmitters = new Set<string>();
+
+        nodes.forEach(node => {
+          const neighbors = adjList.get(node.id) || [];
+          const txNeighbors = neighbors.filter(nId => attempting.has(nId));
+
+          if (attempting.has(node.id)) {
+            if (txNeighbors.length > 0) {
+              collisionAt.add(node.id);
+              failedTransmitters.add(node.id);
+              txNeighbors.forEach(n => failedTransmitters.add(n));
+            }
+          } else {
+            if (txNeighbors.length > 1) {
+              collisionAt.add(node.id);
+              txNeighbors.forEach(n => failedTransmitters.add(n));
+            }
+          }
         });
 
+        totalAttempts += attempting.size;
+        totalCollisions += failedTransmitters.size;
+        totalSuccesses += attempting.size - failedTransmitters.size;
+
         nodes = nodes.map(node => {
-          if (collided.has(node.id)) {
-            totalCollisions++;
-            return { ...node, battery: Math.max(0, node.battery - 300) };
-          } else if (attempting.has(node.id)) {
-            totalSuccesses++;
-            return { ...node, battery: Math.max(0, node.battery - 150) };
+          let batteryDrain = 50;
+          if (attempting.has(node.id)) {
+             batteryDrain = failedTransmitters.has(node.id) ? 300 : 150;
           }
-          return { ...node, battery: Math.max(0, node.battery - 50) };
+          return { ...node, battery: Math.max(0, node.battery - batteryDrain) };
         });
       } else {
         const nextSlot = slotRef >= slots - 1 ? 0 : slotRef + 1;
@@ -286,10 +301,6 @@ export function runFastForwardAnalytics(
           };
         });
       }
-    }
-
-    if (approach === 'chaos') {
-      totalCollisions = Math.floor(totalCollisions / 2);
     }
 
     const energyConsumed = originalNodes.length * 10000 - nodes.reduce((sum, n) => sum + n.battery, 0);

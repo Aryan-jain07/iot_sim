@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { IoTNode, NodeState, Approach, LogEntry, AlgorithmMetrics } from './types';
 import { generateNodes, buildAdjacencyList, greedyColoring, tabuSearchColoring, simulatedAnnealingColoring, runFastForwardAnalytics } from './simulation';
-import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText } from 'lucide-react';
+import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText, Maximize2, Minimize2 } from 'lucide-react';
 
 const CANVAS_WIDTH = 550;
 const CANVAS_HEIGHT = 400;
@@ -106,7 +106,7 @@ function SimulationCanvas({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-      className={`w-full h-auto bg-[#050b14] rounded-lg border border-[#1e293b] transition-colors ${editMode ? 'shadow-[inset_0_0_20px_rgba(168,85,247,0.15)]' : ''}`}
+      className={`w-full h-full min-h-0 bg-[#050b14] rounded-lg border border-[#1e293b] transition-colors ${editMode ? 'shadow-[inset_0_0_20px_rgba(168,85,247,0.15)]' : ''}`}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
@@ -204,7 +204,7 @@ function SimulationCanvas({
 
       {nodes.map(node => {
         const isAssigned = node.color >= 0;
-        const strokeColor = isChaos ? '#ef4444' : (isAssigned ? SLOT_COLORS[node.color % SLOT_COLORS.length] : '#64748b');
+        const strokeColor = isChaos ? '#3b82f6' : (isAssigned ? SLOT_COLORS[node.color % SLOT_COLORS.length] : '#64748b');
         const pct = node.battery / MAX_BATTERY;
         const isSelected = selectedNode === node.id;
         
@@ -221,16 +221,6 @@ function SimulationCanvas({
              style={{ touchAction: 'none' }}>
             
             {/* Removed the expanding yellow ping animation based on user request */}
-            {node.state === 'COLLISION' && (
-              <g className="pointer-events-none" style={{ filter: 'drop-shadow(0 0 15px #ef4444) drop-shadow(0 0 5px #ef4444)' }}>
-                <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#ef4444" strokeWidth="5"
-                   style={{ transformOrigin: `${node.x}px ${node.y}px`, animation: `explode-ring ${0.5 / speedMultiplier}s ease-out forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
-                <circle cx={node.x} cy={node.y} r="7" fill="#ef4444"
-                   style={{ transformOrigin: `${node.x}px ${node.y}px`, animation: `explode-core ${0.3 / speedMultiplier}s ease-out forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
-                <path d={`M ${node.x - 10} ${node.y - 10} L ${node.x + 10} ${node.y + 10} M ${node.x + 10} ${node.y - 10} L ${node.x - 10} ${node.y + 10}`} stroke="#ffffff" strokeWidth="4" strokeLinecap="round"
-                   style={{ animation: `explode-x ${0.5 / speedMultiplier}s forwards`, animationPlayState: isRunning ? 'running' : 'paused' }} />
-              </g>
-            )}
             
             {node.id === sourceNodeId && <circle cx={node.x} cy={node.y} r="15" fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />}
             {node.id === sinkNodeId && <circle cx={node.x} cy={node.y} r="15" fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />}
@@ -263,8 +253,8 @@ function SimulationCanvas({
               <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="4 2" className="pointer-events-none" />
             )}
 
-            <circle cx={node.x} cy={node.y} r="9" fill="#050b14" stroke={node.state === 'TRANSMIT' ? '#facc15' : strokeColor} strokeWidth={isSelected ? "3" : "2.5"} className={`transition-colors duration-200 ${editMode && !isSelected ? 'hover:stroke-purple-400' : ''}`} style={cyberpunkMode ? { filter: `drop-shadow(0 0 8px ${node.state === 'TRANSMIT' ? '#facc15' : strokeColor})` } : {}} />
-            <circle cx={node.x} cy={node.y} r="3" fill={node.state === 'TRANSMIT' ? '#facc15' : strokeColor} className="transition-colors duration-200" style={{ filter: `drop-shadow(0 0 4px ${node.state === 'TRANSMIT' ? '#facc15' : strokeColor})` }} />
+            <circle cx={node.x} cy={node.y} r="9" fill="#050b14" stroke={node.state === 'COLLISION' || node.state === 'FAILED_TX' ? '#ef4444' : node.state === 'TRANSMIT' ? '#facc15' : strokeColor} strokeWidth={isSelected ? "3" : "2.5"} className={`transition-colors duration-200 ${editMode && !isSelected ? 'hover:stroke-purple-400' : ''}`} style={cyberpunkMode ? { filter: `drop-shadow(0 0 8px ${node.state === 'COLLISION' || node.state === 'FAILED_TX' ? '#ef4444' : node.state === 'TRANSMIT' ? '#facc15' : strokeColor})` } : {}} />
+            <circle cx={node.x} cy={node.y} r="3" fill={node.state === 'COLLISION' ? '#ef4444' : node.state === 'TRANSMIT' || node.state === 'FAILED_TX' ? '#facc15' : strokeColor} className="transition-colors duration-200" style={{ filter: `drop-shadow(0 0 4px ${node.state === 'COLLISION' ? '#ef4444' : node.state === 'TRANSMIT' || node.state === 'FAILED_TX' ? '#facc15' : strokeColor})` }} />
             
             <rect x={node.x - 10} y={node.y + 14} width="20" height="3" className="fill-[#1e293b] pointer-events-none" rx="1.5" />
             <rect x={node.x - 10} y={node.y + 14} width={20 * Math.max(0, pct)} height="3" className={`${pct > 0.4 ? 'fill-green-500' : pct > 0.15 ? 'fill-yellow-500' : 'fill-red-500'} pointer-events-none transition-all duration-300`} rx="1.5" />
@@ -298,9 +288,10 @@ function NetworkPanelBase({
   onNodeSelect?: (id: string) => void;
 }) {
   const isChaos = approach === 'chaos';
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   return (
-    <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden flex flex-col h-full">
+    <div className={isFullscreen ? "fixed inset-0 z-50 bg-[#0f172a] flex flex-col" : "bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden flex flex-col h-full"}>
       <div className="flex justify-between items-center p-4 border-b border-[#1e293b]">
         <div>
           <h3 className={`font-semibold flex items-center gap-2 ${isChaos ? 'text-red-400' : 'text-cyan-400'}`}>
@@ -310,23 +301,30 @@ function NetworkPanelBase({
           <p className="text-xs text-slate-400">{subtitle}</p>
         </div>
         {showControls && (
-          !isRunning ? (
-            <button onClick={onStart} disabled={nodes.length === 0 || editMode}
-              className={`text-sm px-4 py-1.5 rounded-lg font-bold transition disabled:opacity-40
-                ${isChaos ? 'bg-red-950 text-red-400 hover:bg-red-900 border border-red-800/50' 
-                          : 'bg-cyan-950 text-cyan-400 hover:bg-cyan-900 border border-cyan-800/50'}`}>
-              ▶ Run
+          <div className="flex items-center gap-2">
+            {!isRunning ? (
+              <button onClick={onStart} disabled={nodes.length === 0 || editMode}
+                className={`text-sm px-4 py-1.5 rounded-lg font-bold transition disabled:opacity-40
+                  ${isChaos ? 'bg-red-950 text-red-400 hover:bg-red-900 border border-red-800/50' 
+                            : 'bg-cyan-950 text-cyan-400 hover:bg-cyan-900 border border-cyan-800/50'}`}>
+                ▶ Run
+              </button>
+            ) : (
+              <button onClick={onStop}
+                className="bg-[#1e293b] text-slate-300 text-sm px-4 py-1.5 rounded-lg hover:bg-slate-700 transition font-bold border border-[#334155]">
+                ⏹ Stop
+              </button>
+            )}
+            <button onClick={() => setIsFullscreen(!isFullscreen)}
+              className="bg-[#1e293b] text-slate-300 p-1.5 rounded-lg hover:bg-slate-700 transition border border-[#334155] flex items-center justify-center"
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
-          ) : (
-            <button onClick={onStop}
-              className="bg-[#1e293b] text-slate-300 text-sm px-4 py-1.5 rounded-lg hover:bg-slate-700 transition font-bold border border-[#334155]">
-              ⏹ Stop
-            </button>
-          )
+          </div>
         )}
       </div>
 
-      <div className="p-4 flex-1">
+      <div className="p-4 flex-1 flex flex-col min-h-0">
         <SimulationCanvas
           nodes={nodes}
           adjList={adjList}
@@ -794,25 +792,50 @@ export default function App() {
 
           if (approach === 'chaos') {
             const attempting = new Set(currentNodes.filter(n => n.battery > 0 && Math.random() < 0.20).map(n => n.id));
-            const collided = new Set<string>();
-            attempting.forEach(id => {
-              const neighbors = adjList.get(id) || [];
-              if (neighbors.some(nId => attempting.has(nId))) collided.add(id);
+            const collisionAt = new Set<string>();
+            const failedTransmitters = new Set<string>();
+
+            currentNodes.forEach(node => {
+               const neighbors = adjList.get(node.id) || [];
+               const txNeighbors = neighbors.filter(nId => attempting.has(nId));
+
+               if (attempting.has(node.id)) {
+                  if (txNeighbors.length > 0) {
+                     collisionAt.add(node.id);
+                     failedTransmitters.add(node.id);
+                     txNeighbors.forEach(n => failedTransmitters.add(n));
+                  }
+               } else {
+                  if (txNeighbors.length > 1) {
+                     collisionAt.add(node.id);
+                     txNeighbors.forEach(n => failedTransmitters.add(n));
+                  }
+               }
             });
 
             updated = currentNodes.map(node => {
               if (node.battery <= 0) return { ...node, state: 'SLEEP' as NodeState, hasDataPacket: node.hasDataPacket };
-              if (collided.has(node.id)) {
-                tickCollisions++;
-                return { ...node, state: 'COLLISION' as NodeState, battery: Math.max(0, node.battery - 300), hasDataPacket: node.hasDataPacket };
-              } else if (attempting.has(node.id)) {
-                tickSuccesses++;
-                successfulTransmitters.add(node.id);
-                return { ...node, state: 'TRANSMIT' as NodeState, battery: Math.max(0, node.battery - 150), hasDataPacket: node.hasDataPacket };
+              
+              let batteryDrain = 50; 
+              if (attempting.has(node.id)) {
+                 batteryDrain = failedTransmitters.has(node.id) ? 300 : 150;
               }
-              return { ...node, state: 'IDLE' as NodeState, battery: Math.max(0, node.battery - 50), hasDataPacket: node.hasDataPacket };
+
+              let nextState: NodeState = 'IDLE';
+              if (attempting.has(node.id)) {
+                 nextState = failedTransmitters.has(node.id) ? 'FAILED_TX' : 'TRANSMIT';
+              } else if (collisionAt.has(node.id)) {
+                 nextState = 'COLLISION'; 
+              }
+
+              if (attempting.has(node.id) && !failedTransmitters.has(node.id)) {
+                 tickSuccesses++;
+                 successfulTransmitters.add(node.id);
+              }
+              
+              return { ...node, state: nextState, battery: Math.max(0, node.battery - batteryDrain), hasDataPacket: node.hasDataPacket };
             });
-            tickCollisions = Math.floor(tickCollisions / 2);
+            tickCollisions += failedTransmitters.size;
           } else {
             const nextSlot = slotRef.current >= maxSlot ? 0 : slotRef.current + 1;
             slotRef.current = nextSlot;
