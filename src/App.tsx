@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { IoTNode, NodeState, Approach, LogEntry, AlgorithmMetrics } from './types';
 import { generateNodes, buildAdjacencyList, greedyColoring, tabuSearchColoring, simulatedAnnealingColoring, runFastForwardAnalytics } from './simulation';
-import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText, Maximize2, Minimize2 } from 'lucide-react';
+import { Network, Activity, Router, Terminal, Cable, ChevronLeft, Menu, Info, X, Zap, Cpu, FileText, Maximize2, Minimize2, BarChart2, PieChart, Share2, Wifi, GitMerge, Code, Database, Server } from 'lucide-react';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement, ArcElement } from 'chart.js';
+import { Bar, Pie, Line } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  PointElement,
+  LineElement,
+  ArcElement
+);
 
 const CANVAS_WIDTH = 550;
 const CANVAS_HEIGHT = 400;
@@ -291,8 +305,9 @@ function NetworkPanelBase({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   return (
-    <div className={isFullscreen ? "fixed inset-0 z-50 bg-[#0f172a] flex flex-col" : "bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden flex flex-col h-full"}>
-      <div className="flex justify-between items-center p-4 border-b border-[#1e293b]">
+    <div className={isFullscreen ? "fixed inset-0 z-50 bg-[#0f172a]/95 backdrop-blur-xl flex flex-col" : "bg-[#0f172a]/60 backdrop-blur-sm border border-[#1e293b]/80 rounded-2xl overflow-hidden flex flex-col h-full shadow-[0_8px_30px_rgb(0,0,0,0.3)] transition-all hover:border-cyan-500/30 group relative"}>
+      <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div className="flex justify-between items-center p-4 border-b border-[#1e293b]/80 bg-[#0B1020]/50 relative z-10">
         <div>
           <h3 className={`font-semibold flex items-center gap-2 ${isChaos ? 'text-red-400' : 'text-cyan-400'}`}>
             {title}
@@ -511,9 +526,17 @@ function AlgorithmInfoModal({ algo, onClose }: { algo: Approach, onClose: () => 
   );
 }
 
-function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
-  if (!data || data.length === 0) return null;
-
+function AnalysisTab({ data, setActiveTab, hasSimulationStarted }: { data: AlgorithmMetrics[], setActiveTab: (t: 'dashboard'|'comparison'|'analysis') => void, hasSimulationStarted: boolean }) {
+  if (!data || data.length === 0 || !hasSimulationStarted) {
+    return (
+      <div className="text-center py-20 bg-[#0B1020] border border-[#1e293b] rounded-xl">
+        <BarChart2 size={48} className="mx-auto text-slate-600 mb-4" />
+        <h3 className="text-lg font-medium text-slate-300">Simulation Pending</h3>
+        <p className="text-slate-500 mt-2">Please start the simulation in the Dashboard to view real-time analysis.</p>
+        <button onClick={() => setActiveTab('dashboard')} className="mt-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Go to Dashboard</button>
+      </div>
+    );
+  }
 
   const schemeColors: Record<string, string> = {
     'No Coloring': '#ef4444',
@@ -528,23 +551,156 @@ function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
     fillColor: schemeColors[d.scheme === 'chaos' ? 'No Coloring' : d.scheme === 'greedy' ? 'Greedy' : d.scheme === 'tabu' ? 'Tabu' : 'SA']
   }));
 
-  const optimizationData = formattedData.filter(d => d.scheme !== 'chaos');
+  const chartOptions = {
+    responsive: true,
+    animation: {
+      duration: 2000,
+      easing: 'easeOutQuart' as const
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        titleColor: '#fff',
+        bodyColor: '#cbd5e1',
+        borderColor: '#1e293b',
+        borderWidth: 1
+      }
+    },
+    scales: {
+      y: { grid: { color: '#1e293b' }, border: { dash: [4, 4] }, ticks: { color: '#64748b' } },
+      x: { grid: { display: false }, ticks: { color: '#64748b' } }
+    }
+  };
+
+  const createChartData = (label: string, dataKey: keyof typeof formattedData[0]) => ({
+    labels: formattedData.map(d => d.name),
+    datasets: [{
+      label,
+      data: formattedData.map(d => Number(d[dataKey])),
+      backgroundColor: formattedData.map(d => d.fillColor),
+      borderRadius: 4
+    }]
+  });
+
+  const bestSuccess = [...formattedData].sort((a, b) => b.successRate - a.successRate)[0];
+  const lowestEnergy = [...formattedData].sort((a, b) => a.energy - b.energy)[0];
+  const bestThroughput = [...formattedData].sort((a, b) => b.throughput - a.throughput)[0];
+  const lowestDelay = [...formattedData].filter(d => d.successRate > 0).sort((a, b) => a.avgDelay - b.avgDelay)[0] || formattedData[0];
+
+  const coloringAlgos = formattedData.filter(d => d.scheme !== 'chaos');
+  const allColoringSameSuccess = coloringAlgos.length > 0 && coloringAlgos.every(d => d.successRate === bestSuccess.successRate);
+  const allColoringSameEnergy = coloringAlgos.length > 0 && coloringAlgos.every(d => d.energy === lowestEnergy.energy);
+  const allColoringSameThroughput = coloringAlgos.length > 0 && coloringAlgos.every(d => d.throughput === bestThroughput.throughput);
+  const allColoringSameDelay = coloringAlgos.length > 0 && coloringAlgos.every(d => d.avgDelay === lowestDelay.avgDelay);
+
+  const lineChartData = {
+    labels: formattedData.map(d => d.name),
+    datasets: [
+      {
+        label: 'Success Rate (%)',
+        data: formattedData.map(d => d.successRate),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        tension: 0.4,
+        fill: true,
+        yAxisID: 'y',
+      },
+      {
+        label: 'Collisions',
+        data: formattedData.map(d => d.collisions),
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        tension: 0.4,
+        fill: true,
+        yAxisID: 'y1',
+      }
+    ]
+  };
+
+  const lineChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: {
+      duration: 1200,
+      easing: 'easeOutQuart' as const
+    },
+    plugins: {
+      legend: { position: 'top' as const, labels: { color: '#cbd5e1' } },
+      tooltip: { backgroundColor: '#0f172a', titleColor: '#fff', bodyColor: '#cbd5e1', borderColor: '#1e293b', borderWidth: 1 }
+    },
+    scales: {
+      y: { type: 'linear' as const, display: true, position: 'left' as const, grid: { color: '#1e293b' }, ticks: { color: '#64748b' } },
+      y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { display: false }, ticks: { color: '#64748b' } },
+      x: { grid: { display: false }, ticks: { color: '#64748b' } }
+    }
+  };
 
   return (
-    <div className="mt-8 flex flex-col gap-6">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 opacity-10"><PieChart size={64} /></div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Highest Success Rate</div>
+          <div className="text-2xl font-bold text-white mb-2">{bestSuccess.successRate.toFixed(1)}%</div>
+          <div className="text-sm">Achieved by <span style={{color: allColoringSameSuccess ? '#10b981' : bestSuccess.fillColor}} className="font-bold">{allColoringSameSuccess ? 'Graph Coloring' : bestSuccess.name}</span></div>
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 opacity-10"><Zap size={64} /></div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Lowest Energy Use</div>
+          <div className="text-2xl font-bold text-white mb-2">{lowestEnergy.energy.toFixed(0)}</div>
+          <div className="text-sm">Achieved by <span style={{color: allColoringSameEnergy ? '#10b981' : lowestEnergy.fillColor}} className="font-bold">{allColoringSameEnergy ? 'Graph Coloring' : lowestEnergy.name}</span></div>
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 opacity-10"><Activity size={64} /></div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Best Throughput</div>
+          <div className="text-2xl font-bold text-white mb-2">{bestThroughput.throughput.toFixed(2)}</div>
+          <div className="text-sm">Achieved by <span style={{color: allColoringSameThroughput ? '#10b981' : bestThroughput.fillColor}} className="font-bold">{allColoringSameThroughput ? 'Graph Coloring' : bestThroughput.name}</span></div>
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 opacity-10"><Router size={64} /></div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Lowest Avg Delay</div>
+          <div className="text-2xl font-bold text-white mb-2">{lowestDelay.avgDelay.toFixed(1)} ms</div>
+          <div className="text-sm">Achieved by <span style={{color: allColoringSameDelay ? '#10b981' : lowestDelay.fillColor}} className="font-bold">{allColoringSameDelay ? 'Graph Coloring' : lowestDelay.name}</span></div>
+        </div>
+      </div>
 
+      <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl">
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Activity size={16} className="text-purple-400"/> Non-Coloring vs Coloring Comparison</h3>
+        <div className="h-64 lg:h-80 w-full">
+          <Line data={lineChartData} options={lineChartOptions} />
+        </div>
+      </div>
 
-      {/* Scheme Comparison Table */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><PieChart size={16} className="text-cyan-400"/> Success Rate (%)</h3>
+          <Bar data={createChartData('Success Rate', 'successRate')} options={chartOptions} />
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Zap size={16} className="text-yellow-400"/> Energy Consumption</h3>
+          <Bar data={createChartData('Energy', 'energy')} options={chartOptions} />
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Activity size={16} className="text-green-400"/> Throughput</h3>
+          <Bar data={createChartData('Throughput', 'throughput')} options={chartOptions} />
+        </div>
+        <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Network size={16} className="text-red-400"/> Collisions</h3>
+          <Bar data={createChartData('Collisions', 'collisions')} options={chartOptions} />
+        </div>
+      </div>
+
       <div className="bg-[#0B1020] border border-[#1e293b] rounded-xl p-5 shadow-xl shadow-purple-900/5">
-        <h3 className="text-white font-bold mb-4">Scheme Comparison</h3>
+        <h3 className="text-white font-bold mb-4">Detailed Metrics Table</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-400">
             <thead className="text-xs uppercase text-slate-500 border-b border-[#1e293b]">
               <tr>
                 <th className="px-4 py-3">Scheme</th>
-                <th className="px-4 py-3">Slots</th>
+                <th className="px-4 py-3">Slots Used</th>
                 <th className="px-4 py-3">Collisions</th>
-                <th className="px-4 py-3">Success</th>
+                <th className="px-4 py-3">Success Rate</th>
                 <th className="px-4 py-3">Avg Delay</th>
                 <th className="px-4 py-3">Energy</th>
                 <th className="px-4 py-3">Throughput</th>
@@ -556,9 +712,13 @@ function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
                   <td className="px-4 py-4 font-medium text-slate-200">{row.name}</td>
                   <td className="px-4 py-4">{row.slots}</td>
                   <td className={`px-4 py-4 ${row.collisions > 0 ? 'text-red-400' : 'text-slate-400'}`}>{row.collisions}</td>
-                  <td className="px-4 py-4">{row.successRate}%</td>
-                  <td className="px-4 py-4">{row.avgDelay} ms</td>
-                  <td className="px-4 py-4">{row.energy}</td>
+                  <td className="px-4 py-4">
+                    <span className={`px-2 py-1 rounded-full text-xs ${row.successRate > 90 ? 'bg-green-900/30 text-green-400' : row.successRate > 50 ? 'bg-yellow-900/30 text-yellow-400' : 'bg-red-900/30 text-red-400'}`}>
+                      {row.successRate.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">{row.avgDelay.toFixed(1)} ms</td>
+                  <td className="px-4 py-4">{row.energy.toFixed(0)}</td>
                   <td className="px-4 py-4">{row.throughput.toFixed(3)}</td>
                 </tr>
               ))}
@@ -570,9 +730,114 @@ function AnalyticsDashboard({ data }: { data: AlgorithmMetrics[] }) {
   );
 }
 
+function DomainCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
+  return (
+    <div className="group relative bg-[#0f172a]/60 backdrop-blur-md border border-[#1e293b] p-6 rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(6,182,212,0.15)] hover:border-cyan-500/30 cursor-default">
+      <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div className="flex items-center gap-4 mb-4 relative z-10">
+        <div className="p-3 bg-[#050b14] rounded-xl border border-[#1e293b] shadow-inner group-hover:shadow-cyan-500/20 transition-all">
+          {icon}
+        </div>
+        <h3 className="text-xl font-bold text-white">{title}</h3>
+      </div>
+      <p className="text-slate-400 leading-relaxed relative z-10 text-sm">{description}</p>
+    </div>
+  );
+}
+
+function HomeTab({ setActiveTab }: { setActiveTab: (t: 'dashboard' | 'comparison' | 'analysis') => void }) {
+  const floatingIcons = [
+    { Icon: Router, size: 24, top: '15%', left: '10%', delay: '0s', color: 'text-cyan-500/10', anim: 'animate-float-1' },
+    { Icon: Cpu, size: 32, top: '65%', left: '85%', delay: '2s', color: 'text-purple-500/10', anim: 'animate-float-2' },
+    { Icon: Code, size: 20, top: '15%', left: '80%', delay: '1s', color: 'text-green-500/10', anim: 'animate-float-3' },
+    { Icon: Network, size: 40, top: '75%', left: '15%', delay: '3s', color: 'text-blue-500/10', anim: 'animate-float-1' },
+    { Icon: Wifi, size: 28, top: '40%', left: '8%', delay: '1.5s', color: 'text-pink-500/10', anim: 'animate-float-2' },
+    { Icon: Database, size: 24, top: '35%', left: '88%', delay: '2.5s', color: 'text-yellow-500/10', anim: 'animate-float-3' },
+    { Icon: Server, size: 28, top: '25%', left: '25%', delay: '4s', color: 'text-indigo-500/10', anim: 'animate-float-2' },
+    { Icon: Activity, size: 20, top: '55%', left: '12%', delay: '0.5s', color: 'text-red-500/10', anim: 'animate-float-3' },
+    { Icon: Terminal, size: 32, top: '80%', left: '75%', delay: '3.5s', color: 'text-emerald-500/10', anim: 'animate-float-1' },
+    { Icon: Zap, size: 24, top: '10%', left: '50%', delay: '1.2s', color: 'text-yellow-500/10', anim: 'animate-float-2' },
+    { Icon: GitMerge, size: 28, top: '60%', left: '30%', delay: '2.8s', color: 'text-cyan-500/10', anim: 'animate-float-3' },
+    { Icon: Share2, size: 36, top: '30%', left: '60%', delay: '4.5s', color: 'text-purple-500/10', anim: 'animate-float-1' }
+  ];
+
+  return (
+    <div className="max-w-7xl mx-auto px-6 py-20 relative animate-in fade-in duration-700 min-h-full flex flex-col justify-center">
+      {/* Decorative floating background elements */}
+      <div className="absolute top-20 right-20 w-64 h-64 bg-cyan-600/10 rounded-full blur-3xl animate-pulse -z-10"></div>
+      <div className="absolute bottom-20 left-20 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl animate-pulse delay-1000 -z-10"></div>
+      
+      {/* Floating Interactive Tech Icons */}
+      {floatingIcons.map((item, i) => {
+        const Icon = item.Icon;
+        return (
+          <div key={i} className={`absolute z-0 ${item.anim} pointer-events-none`} style={{ top: item.top, left: item.left, animationDelay: item.delay }}>
+            <Icon size={item.size} className={`${item.color} drop-shadow-md`} />
+          </div>
+        );
+      })}
+
+      <div className="text-center mb-20 relative z-10">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#0f172a] border border-cyan-900/50 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-8 shadow-lg shadow-cyan-900/20">
+          <Zap size={14} className="animate-pulse" /> IoT Network Simulation Engine
+        </div>
+        <h1 className="text-6xl md:text-8xl font-extrabold text-white mb-8 tracking-tighter drop-shadow-lg leading-tight">
+          Color the network.<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 animate-gradient-x">Save the energy.</span>
+        </h1>
+        <p className="text-slate-400 max-w-3xl mx-auto text-xl leading-relaxed mb-12">
+          A professional-grade Time Division Multiple Access (TDMA) simulator. Compare advanced Graph Coloring heuristics against chaotic random access to visualize interference, packet delay, and battery waste.
+        </p>
+        <div className="flex justify-center gap-6">
+          <button onClick={() => setActiveTab('dashboard')} className="px-10 py-4 bg-cyan-600 text-white font-bold rounded-xl hover:bg-cyan-500 transition-all flex items-center gap-3 shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transform hover:-translate-y-1">
+            <Router size={20} /> Launch Simulator
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-24 w-full relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-300">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-950/30 border border-purple-900/50 text-purple-400 text-xs font-bold uppercase tracking-widest mb-6 mx-auto flex w-max">
+          Interdisciplinary Architecture
+        </div>
+        <h2 className="text-3xl md:text-4xl font-extrabold text-center text-white mb-12 drop-shadow-sm">Built on 4 Academic Pillars</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <DomainCard icon={<Share2 className="text-cyan-400"/>} title="Discrete Mathematics" description="Graph theory fundamentals: defining sensor networks as adjacency matrices and utilizing proper node coloring to map conflict-free TDMA time slots." />
+          <DomainCard icon={<Cpu className="text-blue-400"/>} title="Internet of Things (IoT)" description="Simulating energy-constrained distributed sensor nodes. Analyzes battery drainage profiles during transmissions and idle listening states." />
+          <DomainCard icon={<Wifi className="text-green-400"/>} title="Computer Networks" description="MAC layer scheduling, collision domains, and hidden terminal problems. Visualizes how orchestrated scheduling prevents packet collisions." />
+          <DomainCard icon={<GitMerge className="text-purple-400"/>} title="Design & Analysis of Algorithms" description="Applying and analyzing the time complexity vs. optimality tradeoff of heuristic approximations like Tabu Search and Simulated Annealing for NP-Hard problems." />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+        <div className="bg-[#0B1020]/80 backdrop-blur-sm border border-[#1e293b] p-6 rounded-2xl hover:border-cyan-500/30 transition-colors shadow-lg">
+          <div className="bg-cyan-950/30 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-cyan-900/50">
+            <Network className="text-cyan-400" />
+          </div>
+          <h3 className="text-white font-bold text-lg mb-2">Dynamic Topologies</h3>
+          <p className="text-slate-400 text-sm leading-relaxed">Generate random IoT sensor networks with adjustable node counts and edge densities to test algorithms under varying interference conditions.</p>
+        </div>
+        <div className="bg-[#0B1020]/80 backdrop-blur-sm border border-[#1e293b] p-6 rounded-2xl hover:border-purple-500/30 transition-colors shadow-lg">
+          <div className="bg-purple-950/30 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-purple-900/50">
+            <Cpu className="text-purple-400" />
+          </div>
+          <h3 className="text-white font-bold text-lg mb-2">Advanced Heuristics</h3>
+          <p className="text-slate-400 text-sm leading-relaxed">Implementations of Greedy Coloring, Tabu Search, and Simulated Annealing algorithms optimized for Time Division Multiple Access (TDMA) scheduling.</p>
+        </div>
+        <div className="bg-[#0B1020]/80 backdrop-blur-sm border border-[#1e293b] p-6 rounded-2xl hover:border-green-500/30 transition-colors shadow-lg">
+          <div className="bg-green-950/30 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-green-900/50">
+            <BarChart2 className="text-green-400" />
+          </div>
+          <h3 className="text-white font-bold text-lg mb-2">Real-time Analytics</h3>
+          <p className="text-slate-400 text-sm leading-relaxed">Deep-dive into performance metrics including Success Rate, Energy Consumption, Throughput, and Average Delay with interactive visualizations.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'comparison'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'home' | 'dashboard' | 'comparison' | 'analysis'>('home');
   const [showLogsSidebar, setShowLogsSidebar] = useState(false);
+  const [hasSimulationStarted, setHasSimulationStarted] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [infoPopup, setInfoPopup] = useState<Approach | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -686,6 +951,7 @@ export default function App() {
     setEditMode(false); setSelectedNode(null);
     setSourceNodeId(null); setSinkNodeId(null);
     setIsGenerated(false); setShowResetModal(false);
+    setHasSimulationStarted(false);
     addLog('Network cleared.', 'warning');
   };
 
@@ -905,8 +1171,10 @@ export default function App() {
   const isAnyRunning = runningA || runningB;
 
   const paramsSection = (
-    <section className="bg-[#0B1020] border border-[#1e293b] rounded-2xl p-6 shadow-xl shadow-cyan-900/5 mb-8">
-      <div className="flex items-center justify-between mb-6">
+    <section className="bg-[#0f172a]/80 backdrop-blur-md border border-[#1e293b]/80 rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.4)] mb-8 relative overflow-hidden group">
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 opacity-50 group-hover:opacity-100 transition-opacity"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/10 via-transparent to-transparent pointer-events-none"></div>
+      <div className="relative z-10 flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-white font-medium">
           <Activity size={18} className="text-cyan-400" />
           <h2>Simulation Parameters</h2>
@@ -918,21 +1186,21 @@ export default function App() {
         )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4 relative z-10">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">IoT Nodes</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{nodeCount}</span>
           </div>
           <input type="range" min="5" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4 relative z-10">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">Edge density</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{edgeDensity}</span>
           </div>
           <input type="range" min="0.05" max="0.4" step="0.01" value={edgeDensity} onChange={(e) => setEdgeDensity(Number(e.target.value))} onPointerUp={() => { if (isGenerated) handleConfirmGenerate(); }} onTouchEnd={() => { if (isGenerated) handleConfirmGenerate(); }} disabled={isAnyRunning} className={isAnyRunning ? 'opacity-50 cursor-not-allowed' : ''} />
         </div>
-        <div className="flex flex-col gap-3 col-span-1 md:col-span-4">
+        <div className="flex flex-col gap-3 col-span-1 md:col-span-4 relative z-10">
           <div className="flex justify-between items-center text-sm">
             <label className="text-slate-400">Simulation Speed</label>
             <span className="bg-[#1e293b] text-purple-300 text-xs px-2 py-0.5 rounded-full">{speedMultiplier}x</span>
@@ -972,59 +1240,45 @@ export default function App() {
   );
 
   return (
-    <div className="flex h-screen bg-[#050b14] text-slate-200 font-sans overflow-hidden">
-      {/* Sidebar */}
-      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} transition-all duration-300 bg-[#0B1020] border-r border-[#1e293b] flex flex-col z-20`}>
-        <div className={`p-6 border-b border-[#1e293b] flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
-          {!isSidebarCollapsed && (
-            <h2 className="text-lg font-bold text-white flex items-center gap-2 cursor-pointer select-none" onClick={handleTitleClick} title="Click 5 times for a surprise">
-              <Network size={20} className={`text-cyan-400 ${cyberpunkMode ? 'animate-pulse drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]' : ''}`} />
-              <span className="truncate">IoT Simulator</span>
-            </h2>
-          )}
-          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-400 hover:text-white transition-colors">
-            {isSidebarCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
-          </button>
+    <div className="flex flex-col h-screen bg-[#020617] text-slate-200 font-sans overflow-hidden">
+      {/* Top Navigation Header */}
+      <header className="h-16 bg-[#0B1020] border-b border-[#1e293b] flex items-center justify-between px-6 shrink-0 z-20 shadow-sm">
+        <div className="flex items-center gap-3 select-none cursor-pointer" onClick={handleTitleClick} title="Click 5 times for a surprise">
+           <Network size={24} className={`text-cyan-500 ${cyberpunkMode ? 'animate-pulse drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]' : ''}`} />
+           <span className="font-bold text-lg tracking-tight text-white">IoT Sim<span className="text-cyan-500">.</span></span>
         </div>
-        <nav className="flex-1 p-4 flex flex-col gap-2">
-          <button onClick={() => setActiveTab('dashboard')} title="Dashboard" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${activeTab === 'dashboard' ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
-            <Router size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Dashboard</span>}
-          </button>
-          <button onClick={() => setActiveTab('comparison')} title="Comparison" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${activeTab === 'comparison' ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
-            <Cable size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Comparison</span>}
-          </button>
-          <div className="flex-1"></div>
-          <button onClick={() => setShowLogsSidebar(!showLogsSidebar)} title="Logs Panel" className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-4'} py-3 rounded-lg font-medium text-sm transition-colors ${showLogsSidebar ? 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/50' : 'text-slate-400 hover:text-slate-200 hover:bg-[#0f172a]'}`}>
-            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-              <Terminal size={18} className="shrink-0" /> {!isSidebarCollapsed && <span>Logs Panel</span>}
-            </div>
-            {!isSidebarCollapsed && <span className="text-[10px] bg-[#1e293b] px-2 py-0.5 rounded-full">{logs.length}</span>}
-          </button>
+        
+        <nav className="hidden md:flex items-center gap-1 bg-[#0f172a] p-1 rounded-lg border border-[#1e293b]">
+          <button onClick={() => setActiveTab('home')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'home' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Home</button>
+          <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Simulator</button>
+          <button onClick={() => setActiveTab('comparison')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'comparison' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Compare</button>
+          <button onClick={() => setActiveTab('analysis')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'analysis' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Analytics</button>
         </nav>
-      </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto relative bg-glow-theme">
-        <div className="p-8">
-          <header className="max-w-6xl mx-auto mb-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="bg-[#0B1020] p-1.5 rounded border border-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.4)]">
-                <Network size={18} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]" />
-              </div>
-              <span className="text-xs font-medium text-slate-300">
-                IoT Energy Optimisation <span className="text-slate-500 mx-1">·</span> Graph Coloring
-              </span>
-            </div>
-            <h1 className="text-5xl font-extrabold text-white mb-5 tracking-tight drop-shadow-sm">
-              Color the network. <span className="text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]">Save the energy.</span>
-            </h1>
-            <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">
-              Compare <span className="text-slate-200 font-medium">Greedy</span>, <span className="text-slate-200 font-medium">Tabu Search</span>, and <span className="text-slate-200 font-medium">Simulated Annealing</span> on dynamically generated IoT topologies. Visualise collisions, delay, and energy waste when scheduling is left to chance.
-            </p>
-          </header>
+        <div className="flex items-center gap-3">
+           <button onClick={() => setShowLogsSidebar(!showLogsSidebar)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${showLogsSidebar ? 'bg-cyan-950/30 text-cyan-400 border-cyan-900/50 shadow-sm' : 'bg-[#0f172a] text-slate-400 border-[#1e293b] hover:text-slate-200 hover:bg-[#1e293b]'}`}>
+             <Terminal size={16} />
+             <span className="hidden sm:inline">Logs</span>
+             {logs.length > 0 && <span className="bg-cyan-900/50 text-cyan-300 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{logs.length}</span>}
+           </button>
+        </div>
+      </header>
 
-          {activeTab === 'dashboard' && (
-            <div className="max-w-6xl mx-auto pb-20">
+      {/* Main Area */}
+      <div className="flex-1 flex overflow-hidden relative">
+        <main className="flex-1 overflow-y-auto bg-glow-theme">
+          {activeTab === 'home' && <HomeTab setActiveTab={setActiveTab} />}
+          
+          {activeTab !== 'home' && (
+            <div className="p-6 md:p-8 flex-1">
+              {activeTab === 'dashboard' && (
+                <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500">
+                  <div className="mb-6 flex items-end justify-between">
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">Network Simulator</h2>
+                      <p className="text-slate-400 text-base">Visualize algorithm behavior in real-time on a single topology.</p>
+                    </div>
+                  </div>
             {paramsSection}
             {/* Dashboard specifically locks Panel A to Chaos and B to user choice */}
             <div className="mb-6 flex flex-col gap-3">
@@ -1035,7 +1289,7 @@ export default function App() {
                      <div key={algo} className="flex-1 flex relative">
                        <button
                          onClick={() => setApproachB(algo as Approach)}
-                         className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2 ${approachB === algo ? 'bg-[#1e293b] text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-slate-300'}`}
+                         className={`flex-1 px-4 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${approachB === algo ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] scale-[1.02]' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}
                        >
                          {getApproachName(algo as Approach).replace(' Coloring', '')}
                        </button>
@@ -1055,7 +1309,7 @@ export default function App() {
               <NetworkPanel 
                 title="Chaos Network" subtitle="Unoptimized Random Access" approach="chaos"
                 nodes={nodesA} adjList={adjList} isRunning={runningA} packets={packetsA} collisions={collisionsA} batteryPercent={batteryA}
-                onStart={() => setRunningA(true)} onStop={() => setRunningA(false)}
+                onStart={() => { setRunningA(true); setHasSimulationStarted(true); }} onStop={() => setRunningA(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                 onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
                 sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
@@ -1063,26 +1317,35 @@ export default function App() {
               <NetworkPanel 
                 title="Optimized Network" subtitle={getApproachName(approachB)} approach={approachB}
                 nodes={nodesB} adjList={adjList} isRunning={runningB} packets={packetsB} collisions={collisionsB} batteryPercent={batteryB}
-                onStart={() => setRunningB(true)} onStop={() => setRunningB(false)}
+                onStart={() => { setRunningB(true); setHasSimulationStarted(true); }} onStop={() => setRunningB(false)}
                 onNodeMove={handleNodeMove} onNodeMoveEnd={handleNodeMoveEnd}
                 onNodeRightClick={handleNodeRightClick} selectedNode={selectedNode} editMode={editMode} speedMultiplier={speedMultiplier}
                 sourceNodeId={sourceNodeId} sinkNodeId={sinkNodeId} route={route} onNodeSelect={setSelectedNode}
               />
             </div>
-            {isGenerated && <AnalyticsDashboard data={analyticsData} />}
+          </div>
+        )}
+
+        {activeTab === 'analysis' && (
+          <div className="max-w-7xl mx-auto h-full flex flex-col pb-10">
+            <div className="mb-6">
+              <h2 className="text-3xl font-bold text-white mb-2">Performance Analysis</h2>
+              <p className="text-slate-400 text-base">Detailed breakdown of algorithmic efficiency, throughput, and energy consumption.</p>
+            </div>
+            <AnalysisTab data={analyticsData} setActiveTab={setActiveTab} hasSimulationStarted={hasSimulationStarted} />
           </div>
         )}
 
         {activeTab === 'comparison' && (
-          <div className="max-w-6xl mx-auto h-full flex flex-col pb-8">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white mb-2">Compare Approaches</h2>
-              <p className="text-slate-400 text-sm">Select any two algorithms to compare their performance side by side.</p>
-            </div>
+                <div className="max-w-7xl mx-auto h-full flex flex-col pb-10 animate-in fade-in duration-500">
+                  <div className="mb-6">
+                    <h2 className="text-3xl font-bold text-white mb-2">Algorithm Comparison</h2>
+                    <p className="text-slate-400 text-base">Select any two approaches to compare their performance side by side.</p>
+                  </div>
             {paramsSection}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1 min-h-[500px]">
               <div className="flex flex-col gap-4">
-                <select value={approachA} onChange={e => setApproachA(e.target.value as Approach)} className="bg-[#0B1020] border border-[#1e293b] text-white rounded-lg p-3 outline-none focus:border-cyan-500">
+                <select value={approachA} onChange={e => setApproachA(e.target.value as Approach)} className="bg-[#0f172a]/80 backdrop-blur-md border border-[#1e293b] text-white rounded-xl p-3.5 outline-none focus:border-cyan-500 shadow-inner font-semibold cursor-pointer transition-colors hover:bg-[#1e293b]/80">
                   <option value="chaos">Random Access (Chaos)</option>
                   <option value="greedy">Greedy Coloring</option>
                   <option value="tabu">Tabu Search</option>
@@ -1098,7 +1361,7 @@ export default function App() {
                 />
               </div>
               <div className="flex flex-col gap-4">
-                <select value={approachB} onChange={e => setApproachB(e.target.value as Approach)} className="bg-[#0B1020] border border-[#1e293b] text-white rounded-lg p-3 outline-none focus:border-cyan-500">
+                <select value={approachB} onChange={e => setApproachB(e.target.value as Approach)} className="bg-[#0f172a]/80 backdrop-blur-md border border-[#1e293b] text-white rounded-xl p-3.5 outline-none focus:border-cyan-500 shadow-inner font-semibold cursor-pointer transition-colors hover:bg-[#1e293b]/80">
                   <option value="chaos">Random Access (Chaos)</option>
                   <option value="greedy">Greedy Coloring</option>
                   <option value="tabu">Tabu Search</option>
@@ -1114,12 +1377,26 @@ export default function App() {
                 />
               </div>
             </div>
-          </div>
-        )}
-        </div>
-      </main>
+                </div>
+              )}
+            </div>
+          )}
 
-      {/* Right Logs Sidebar */}
+          {/* Global Footer */}
+          <footer className="mt-auto py-8 border-t border-[#1e293b]/50 bg-[#0B1020]/50 backdrop-blur">
+            <div className="max-w-7xl mx-auto px-6 text-center flex flex-col items-center gap-2">
+              <Network size={20} className="text-cyan-500 opacity-50 mb-2" />
+              <p className="text-sm text-slate-500 font-medium">
+                Advanced IoT Simulation Engine
+              </p>
+              <p className="text-xs text-slate-600">
+                Designed to evaluate TDMA scheduling heuristics (Greedy, Tabu Search, Simulated Annealing) against Random Access collisions.
+              </p>
+            </div>
+          </footer>
+        </main>
+
+        {/* Right Logs Sidebar */}
       {showLogsSidebar && (
         <aside className="w-80 bg-[#0B1020] border-l border-[#1e293b] flex flex-col h-full shadow-2xl transition-all duration-300">
           <div className="p-4 border-b border-[#1e293b] flex justify-between items-center bg-[#050b14]">
@@ -1155,6 +1432,7 @@ export default function App() {
           </div>
         </aside>
       )}
+      </div>
 
       {/* Reset Modal */}
       {showResetModal && (

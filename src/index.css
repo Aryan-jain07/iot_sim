@@ -11,9 +11,33 @@ body {
   background-image: 
     radial-gradient(circle at 15% 10%, rgba(6, 182, 212, 0.15) 0%, transparent 40%),
     radial-gradient(circle at 85% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 45%),
-    radial-gradient(circle at 50% 80%, rgba(234, 179, 8, 0.08) 0%, transparent 50%);
+    radial-gradient(circle at 50% 80%, rgba(234, 179, 8, 0.08) 0%, transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
   background-attachment: fixed;
 }
+
+@keyframes float-1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(40px, -50px) rotate(15deg); }
+  66% { transform: translate(-20px, 30px) rotate(-10deg); }
+}
+
+@keyframes float-2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(-50px, -20px) rotate(-15deg); }
+  66% { transform: translate(30px, 50px) rotate(10deg); }
+}
+
+@keyframes float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, 30px) scale(1.1); }
+}
+
+.animate-float-1 { animation: float-1 12s ease-in-out infinite; }
+.animate-float-2 { animation: float-2 15s ease-in-out infinite; }
+.animate-float-3 { animation: float-3 10s ease-in-out infinite; }
 
 /* Custom Range Slider Styling */
 input[type=range] {
