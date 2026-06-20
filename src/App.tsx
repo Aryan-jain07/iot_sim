@@ -762,7 +762,7 @@ function HomeTab({ setActiveTab }: { setActiveTab: (t: 'dashboard' | 'comparison
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-20 relative animate-in fade-in duration-700 min-h-full flex flex-col justify-center">
+    <div className="max-w-7xl mx-auto px-6 py-16 relative animate-slide-up-morph min-h-full flex flex-col justify-center">
       {/* Decorative floating background elements */}
       <div className="absolute top-20 right-20 w-64 h-64 bg-cyan-600/10 rounded-full blur-3xl animate-pulse -z-10"></div>
       <div className="absolute bottom-20 left-20 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl animate-pulse delay-1000 -z-10"></div>
@@ -777,10 +777,8 @@ function HomeTab({ setActiveTab }: { setActiveTab: (t: 'dashboard' | 'comparison
         );
       })}
 
+
       <div className="text-center mb-20 relative z-10">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#0f172a] border border-cyan-900/50 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-8 shadow-lg shadow-cyan-900/20">
-          <Zap size={14} className="animate-pulse" /> IoT Network Simulation Engine
-        </div>
         <h1 className="text-6xl md:text-8xl font-extrabold text-white mb-8 tracking-tighter drop-shadow-lg leading-tight">
           Color the network.<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 animate-gradient-x">Save the energy.</span>
         </h1>
@@ -1242,25 +1240,39 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-[#020617] text-slate-200 font-sans overflow-hidden">
       {/* Top Navigation Header */}
-      <header className="h-16 bg-[#0B1020] border-b border-[#1e293b] flex items-center justify-between px-6 shrink-0 z-20 shadow-sm">
+      <header className="h-16 bg-[#0B1020] border-b border-[#1e293b] flex items-center justify-between px-6 shrink-0 z-20 shadow-sm relative">
         <div className="flex items-center gap-3 select-none cursor-pointer" onClick={handleTitleClick} title="Click 5 times for a surprise">
            <Network size={24} className={`text-cyan-500 ${cyberpunkMode ? 'animate-pulse drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]' : ''}`} />
            <span className="font-bold text-lg tracking-tight text-white">IoT Sim<span className="text-cyan-500">.</span></span>
         </div>
         
-        <nav className="hidden md:flex items-center gap-1 bg-[#0f172a] p-1 rounded-lg border border-[#1e293b]">
-          <button onClick={() => setActiveTab('home')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'home' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Home</button>
-          <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Simulator</button>
-          <button onClick={() => setActiveTab('comparison')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'comparison' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Compare</button>
-          <button onClick={() => setActiveTab('analysis')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'analysis' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Analytics</button>
-        </nav>
+        {activeTab === 'home' ? (
+          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-500 animate-in fade-in duration-500 absolute left-1/2 -translate-x-1/2">
+             <div className="flex items-center gap-2">
+               <span className="relative flex h-2 w-2">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+               </span>
+               <span className="text-cyan-400 tracking-wide">Simulation Engine Ready</span>
+             </div>
+          </div>
+        ) : (
+          <nav className="hidden md:flex items-center gap-1 bg-[#0f172a] p-1 rounded-lg border border-[#1e293b] absolute left-1/2 -translate-x-1/2">
+            <button onClick={() => setActiveTab('home')} className="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50">Home</button>
+            <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Simulator</button>
+            <button onClick={() => setActiveTab('comparison')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'comparison' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Compare</button>
+            <button onClick={() => setActiveTab('analysis')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'analysis' ? 'bg-[#1e293b] text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50'}`}>Analytics</button>
+          </nav>
+        )}
 
         <div className="flex items-center gap-3">
-           <button onClick={() => setShowLogsSidebar(!showLogsSidebar)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${showLogsSidebar ? 'bg-cyan-950/30 text-cyan-400 border-cyan-900/50 shadow-sm' : 'bg-[#0f172a] text-slate-400 border-[#1e293b] hover:text-slate-200 hover:bg-[#1e293b]'}`}>
-             <Terminal size={16} />
-             <span className="hidden sm:inline">Logs</span>
-             {logs.length > 0 && <span className="bg-cyan-900/50 text-cyan-300 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{logs.length}</span>}
-           </button>
+           {activeTab !== 'home' && (
+             <button onClick={() => setShowLogsSidebar(!showLogsSidebar)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${showLogsSidebar ? 'bg-cyan-950/30 text-cyan-400 border-cyan-900/50 shadow-sm' : 'bg-[#0f172a] text-slate-400 border-[#1e293b] hover:text-slate-200 hover:bg-[#1e293b]'}`}>
+               <Terminal size={16} />
+               <span className="hidden sm:inline">Logs</span>
+               {logs.length > 0 && <span className="bg-cyan-900/50 text-cyan-300 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{logs.length}</span>}
+             </button>
+           )}
         </div>
       </header>
 
@@ -1272,7 +1284,7 @@ export default function App() {
           {activeTab !== 'home' && (
             <div className="p-6 md:p-8 flex-1">
               {activeTab === 'dashboard' && (
-                <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500">
+                <div className="max-w-7xl mx-auto pb-10 animate-slide-morph">
                   <div className="mb-6 flex items-end justify-between">
                     <div>
                       <h2 className="text-3xl font-bold text-white mb-2">Network Simulator</h2>
@@ -1327,7 +1339,7 @@ export default function App() {
         )}
 
         {activeTab === 'analysis' && (
-          <div className="max-w-7xl mx-auto h-full flex flex-col pb-10">
+          <div className="max-w-7xl mx-auto h-full flex flex-col pb-10 animate-slide-morph">
             <div className="mb-6">
               <h2 className="text-3xl font-bold text-white mb-2">Performance Analysis</h2>
               <p className="text-slate-400 text-base">Detailed breakdown of algorithmic efficiency, throughput, and energy consumption.</p>
@@ -1337,7 +1349,7 @@ export default function App() {
         )}
 
         {activeTab === 'comparison' && (
-                <div className="max-w-7xl mx-auto h-full flex flex-col pb-10 animate-in fade-in duration-500">
+                <div className="max-w-7xl mx-auto h-full flex flex-col pb-10 animate-slide-morph">
                   <div className="mb-6">
                     <h2 className="text-3xl font-bold text-white mb-2">Algorithm Comparison</h2>
                     <p className="text-slate-400 text-base">Select any two approaches to compare their performance side by side.</p>
